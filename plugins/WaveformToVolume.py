@@ -1,105 +1,186 @@
 # WaveformToVolume Paraview filter
 
-# Load the `WaveformDataReader` to access its VTK keys
-# sys.path.append(os.path.dirname(__file__))
-# from WaveformDataReader import WaveformDataReader
-
-import logging
-import time
-import hashlib
-import os
+import spherical
+import quaternionic
 import numpy as np
-
-from paraview import util
-from paraview.util.vtkAlgorithm import smdomain, smproperty, smproxy
-from paraview.vtk.util import numpy_support as vtknp
-from vtkmodules.numpy_interface import dataset_adapter as dsa
-from vtkmodules.util.vtkAlgorithm import VTKPythonAlgorithmBase
-from vtkmodules.vtkCommonCore import vtkDataArraySelection
-from vtkmodules.vtkCommonDataModel import vtkUniformGrid
+import os
+import hashlib
+import time
+import logging
+import sys
+import tempfile
 
 import rich.progress
 
+from vtkmodules.vtkCommonDataModel import vtkUniformGrid
+from vtkmodules.vtkCommonCore import vtkDataArraySelection
+from vtkmodules.util.vtkAlgorithm import VTKPythonAlgorithmBase
+from vtkmodules.numpy_interface import dataset_adapter as dsa
+from paraview.vtk.util import numpy_support as vtknp
+from paraview.util.vtkAlgorithm import smdomain, smproperty, smproxy
+from paraview import util
+
 
 logger = logging.getLogger(__name__)
+tmp_dir = tempfile.mkdtemp(prefix='rose-')
 
 
-def load_or_create_swsh_grid(
-    size,
-    num_points,
-    spin_weight,
-    ell_max,
-    clip_y_normal,
-    clip_z_normal,
-    cache_dir=None,
-):
-    logger = logging.getLogger(__name__)
-    X = np.linspace(-size, size, num_points)
-    Y = np.linspace(-size, 0, num_points // 2) if clip_y_normal else X
-    Z = np.linspace(-size, 0, num_points // 2) if clip_z_normal else X
-    x, y, z = map(
-        lambda arr: arr.flatten(order="F"), np.meshgrid(X, Y, Z, indexing="ij")
+def new_progress():
+    progress = rich.progress.Progress(
+        rich.progress.TextColumn(
+            "[progress.description]{task.description}"
+        ),
+        rich.progress.SpinnerColumn(
+            spinner_name="simpleDots", finished_text="... done."
+        ),
+        rich.progress.TimeElapsedColumn(),
     )
-    r = np.sqrt(x**2 + y**2 + z**2)
-    swsh_grid = None
-    if cache_dir:
-        swsh_grid_id = (
-            round(float(size), 3),
-            int(num_points),
-            int(spin_weight),
-            int(ell_max),
-            bool(clip_y_normal),
-            bool(clip_z_normal),
+    if progress is None:
+        logger.fatal("rich progress is None")
+        return
+    return progress
+
+
+class SWSHParameters():
+    size: float = 0.0
+    num_points: float = 0.0
+    spin_weight: int = -2
+    ell_max: int = 0
+    clip_y_normal: bool = False
+    clip_z_normal: bool = False
+
+
+class SphericalGrid():
+    r: np.ndarray
+    theta: np.ndarray
+    phi: np.ndarray
+
+
+class CartesianGrid():
+    x: np.ndarray
+    y: np.ndarray
+    z: np.ndarray
+
+    def __init__(self, p: SWSHParameters) -> None:
+        X = np.linspace(-p.size, p.size, p.num_points)
+        Y = np.linspace(-p.size, 0, p.num_points //
+                        2) if p.clip_y_normal else X
+        Z = np.linspace(-p.size, 0, p.num_points //
+                        2) if p.clip_z_normal else X
+        self.x, self.y, self.z = map(
+            lambda arr: arr.flatten(order="F"), np.meshgrid(
+                X, Y, Z, indexing="ij")
         )
-        # Create a somewhat unique filename
-        swsh_grid_hash = (
-            int(hashlib.md5(repr(swsh_grid_id).encode("utf-8")).hexdigest(), 16)
-            % 10**8
-        )
-        swsh_grid_cache_file = os.path.join(
-            cache_dir,
-            f"swsh_grid_D{int(size)}_N{int(num_points)}_{str(swsh_grid_hash)}.npy",
-        )
-        if os.path.exists(swsh_grid_cache_file):
-            logger.debug(
-                f"Loading SWSH grid from file '{swsh_grid_cache_file}'..."
-            )
-            swsh_grid = np.load(swsh_grid_cache_file)
-        else:
-            logger.debug(f"No SWSH grid file '{swsh_grid_cache_file}' found.")
+
+    def spherical(self) -> SphericalGrid:
+        spherical_grid = SphericalGrid()
+        spherical_grid.r = np.sqrt(self.x**2 + self.y**2 + self.z**2)
+        spherical_grid.theta = np.arccos(self.z / spherical_grid.r)
+        spherical_grid.phi = np.arctan2(self.y, self.x)
+        return spherical_grid
+
+
+def swsh_grid_hash(p: SWSHParameters):
+    key = f'{p.size}|{p.num_points}|{p.spin_weight}|{p.ell_max}|{p.clip_y_normal}|{p.clip_z_normal}'.encode(
+        'utf-8')
+    return hashlib.sha256(key).hexdigest()[:16]
+
+
+def load_swsh_grid(params: SWSHParameters, cache_dir: str):
+    if cache_dir == "":
+        return None
+    grid_hash = swsh_grid_hash(params)
+    cache_filename = os.path.join(
+        cache_dir,
+        f'{grid_hash}.npy',
+    )
+    if not os.path.exists(cache_filename):
+        logger.info("Cache miss: {swsh_grid_cache_filename}")
+        return None
+
+    logger.info(
+        f"Loading SWSH grid from file '{cache_filename}'..."
+    )
+    swsh_grid = np.load(cache_filename)
+    return swsh_grid
+
+
+def create_swsh_grid(p: SWSHParameters):
+    logger.info("Creating SWSH grid...")
+    progress = new_progress()
+
+    task_id = progress.add_task("Computing SWSH grid", total=1)
+
+    cartesian_grid = CartesianGrid(p)
+    spherical_grid = cartesian_grid.spherical()
+
+    angles = quaternionic.array.from_spherical_coordinates(
+        spherical_grid.theta, spherical_grid.phi)
+    swsh_grid = spherical.Wigner(p.ell_max).sYlm(s=p.spin_weight, R=angles)
+    progress.update(task_id, completed=1)
+    return swsh_grid
+
+
+def save_swsh_grid(swsh_grid, p: SWSHParameters, cache_dir: str):
+    if cache_dir == "":
+        return
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+    grid_hash = swsh_grid_hash(p)
+    cache_filename = os.path.join(
+        cache_dir,
+        f'{grid_hash}.npy',
+    )
+    if not os.path.exists(cache_filename):
+        np.save(cache_filename, swsh_grid)
+        logger.debug(f'SWSH grid cache saved to {cache_filename}.')
+
+
+def load_or_create_swsh_grid(p: SWSHParameters, cache_dir: str):
+    swsh_grid = load_swsh_grid(p, cache_dir)
     if swsh_grid is None:
-        logger.info("No cached SWSH grid found, computing now...")
-        logger.info("Loading 'spherical' module...")
-        import quaternionic
-        import spherical
+        swsh_grid = create_swsh_grid(p)
+        save_swsh_grid(swsh_grid, p, cache_dir)
+    return swsh_grid
 
-        logger.info("'spherical' module loaded.")
-        with rich.progress.Progress(
-            rich.progress.TextColumn(
-                "[progress.description]{task.description}"
-            ),
-            rich.progress.SpinnerColumn(
-                spinner_name="simpleDots", finished_text="... done."
-            ),
-            rich.progress.TimeElapsedColumn(),
-        ) as progress:
-            task_id = progress.add_task("Computing SWSH grid", total=1)
-            th = np.arccos(z / r)
-            phi = np.arctan2(y, x)
-            angles = quaternionic.array.from_spherical_coordinates(th, phi)
-            swsh_grid = spherical.Wigner(ell_max).sYlm(s=int(spin_weight), R=angles)
-            if cache_dir:
-                if not os.path.exists(cache_dir):
-                    os.makedirs(cache_dir)
-                if not os.path.exists(swsh_grid_cache_file):
-                    np.save(swsh_grid_cache_file, swsh_grid)
-                    logger.debug(
-                        "SWSH grid cache saved to file"
-                        f" '{swsh_grid_cache_file}'."
-                    )
-            progress.update(task_id, completed=1)
-    return swsh_grid, r
 
+def smoothstep(x):
+    return np.where(x < 0, 0, np.where(x <= 1, 3 * x**2 - 2 * x**3, 1))
+
+
+def activation(x, width):
+    return smoothstep(x / width)
+
+
+def deactivation(x, width, outer):
+    return smoothstep((outer - x) / width)
+
+
+class GridAdjustParameters():
+    activation_offset: float
+    activation_width: float
+    deactivation_width: float
+    radial_scale: float
+    one_over_r_scaling: bool
+
+
+def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustParameters):
+    r = CartesianGrid(grid_params).spherical().r
+    screen = activation(
+        x=r - params.activation_offset,
+        width=params.activation_width,
+    ) * deactivation(x=r,
+                     width=params.deactivation_width,
+                     outer=grid_params.size)
+    swsh_grid *= screen.reshape(screen.shape + (1,))
+    # Apply radial scale
+    r *= params.radial_scale
+    if params.one_over_r_scaling:
+        swsh_grid /= (r + 1.0e-30).reshape(r.shape + (1,))
+    return swsh_grid
+
+
+# Needed by ParaView
 def create_modified_callback(anobject):
     import weakref
 
@@ -112,6 +193,7 @@ def create_modified_callback(anobject):
             o.Modified()
 
     return _markmodified
+
 
 def get_timestep(algorithm, logger=None):
     if logger is None:
@@ -144,6 +226,7 @@ def set_timesteps(algorithm, timesteps, logger=None):
         f"Set data timesteps to {outInfo.Get(executive.TIME_RANGE())}."
     )
 
+
 def get_mode_name(l, abs_m):
     return "({}, {}) Mode".format(l, abs_m)
 
@@ -154,61 +237,13 @@ def LM_index(ell, m, ell_min):
     return ell * (ell + 1) - ell_min**2 + m
 
 
-def smoothstep(x):
-    return np.where(x < 0, 0, np.where(x <= 1, 3 * x**2 - 2 * x**3, 1))
-
-
-def activation(x, width):
-    return smoothstep(x / width)
-
-
-def deactivation(x, width, outer):
-    return smoothstep((outer - x) / width)
-
-
-def cached_swsh_grid(
-    size,
-    radial_scale,
-    activation_offset,
-    activation_width,
-    deactivation_width,
-    add_one_over_r_scaling,
-    **swsh_grid_kwargs,
-):
-
-    logger.debug("No SWSH grid in memory, retrieving from disk cache.")
-    swsh_grid, r = load_or_create_swsh_grid(
-        size=size, **swsh_grid_kwargs
-    )
-    # Apply screening
-    screen = activation(
-        r - activation_offset, activation_width
-    ) * deactivation(r, deactivation_width, size)
-    swsh_grid *= screen.reshape(screen.shape + (1,))
-    # Apply radial scale
-    r *= radial_scale
-    if add_one_over_r_scaling:
-        swsh_grid /= (r + 1.0e-30).reshape(r.shape + (1,))
-    return swsh_grid, r
-
-
-has_shown_warning_nonuniformly_sampled = False
-
-
 @smproxy.filter(label="Waveform To Volume")
 @smproperty.input(name="WaveformData", port_index=0)
 @smdomain.datatype(dataTypes=["vtkTable"])
-# TODO: We should be able to use a `SwshGrid` as a second input to this filter
-# and use this class to compute the volume data for the waveform without having
-# to generate the grid. Multiple inputs work fine, but for some reason
-# `pv.LoadPlugin` doesn't load `SwshGrid`.
-# @smproperty.input(name="GridData", port_index=1)
-# @smdomain.datatype(dataTypes=["vtkUniformGrid"])
 class WaveformToVolume(VTKPythonAlgorithmBase):
     def __init__(self):
         VTKPythonAlgorithmBase.__init__(
             self,
-            # nInputPorts=2,
             nInputPorts=1,
             nOutputPorts=1,
             # Choosing `vtkUniformGrid` for the output for the following reasons:
@@ -249,9 +284,6 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
     def _get_waveform_data(self):
         return dsa.WrapDataObject(self.GetInputDataObject(0, 0))
 
-    # def _get_grid_data(self):
-    #     return dsa.WrapDataObject(self.GetInputDataObject(1, 0))
-
     @smproperty.dataarrayselection(name="Modes")
     def GetModes(self):
         return self.modes_selection
@@ -276,7 +308,6 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         self.size = value
         self.Modified()
 
-    # Not needed when using SwshGrid input
     @smproperty.intvector(name="SpatialResolution", default_values=100)
     def SetSpatialResolution(self, value):
         self.num_points_per_dim = value
@@ -287,13 +318,12 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         self.keep_every_n_timestep = value
         self.Modified()
 
-    # Not needed when using SwshGrid input
     @smproperty.intvector(name="EllMax", default_values=2)
     def SetEllMax(self, value):
         self.ell_max = value
         self.Modified()
 
-    @smproperty.doublevector(name="SpinWeight", default_values=-2)
+    @smproperty.intvector(name="SpinWeight", default_values=-2)
     def SetSpinWeight(self, value):
         self.spin_weight = value
         self.Modified()
@@ -318,7 +348,7 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
     @smproperty.intvector(name="OneOverRScaling", default_values=False)
     @smdomain.xml('<BooleanDomain name="bool"/>')
     def SetOneOverRScaling(self, value):
-        self.add_one_over_r_scaling = value
+        self.one_over_r_scaling = value
         self.Modified()
 
     @smproperty.intvector(name="InvertRotationDirection", default_values=False)
@@ -342,7 +372,7 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         self.deactivation_width = value
         self.Modified()
 
-    @smproperty.stringvector(name="SwshCacheDirectory", default_values="swsh_cache")
+    @smproperty.stringvector(name="SwshCacheDirectory", default_values=os.path.join(tmp_dir, "swsh_cache"))
     def SetSwshCacheDirectory(self, value):
         self.swsh_cache_dir = value
         self.Modified()
@@ -369,13 +399,8 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
     def RequestInformation(self, request, inInfo, outInfo):
         logger.debug("Requesting information...")
         waveform_data_info = inInfo[0].GetInformationObject(0)
-        # Careful with printing these information objects, their stream operator
-        # may randomly crash...
-        # logger.debug("Waveform data info: {}".format(waveform_data_info))
-        # grid_info = inInfo[1].GetInformationObject(0)
-        info = outInfo.GetInformationObject(0)
 
-        logger.warn(f'Request Information: {waveform_data_info}')
+        info = outInfo.GetInformationObject(0)
 
         # For the `vtkUniformGrid` output we need to provide extents
         # so that it gets rendered at all.
@@ -397,7 +422,7 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         return 1
 
     def RequestData(self, request, inInfo, outInfo):
-        logger.debug("Requesting data...")
+        logger.info("Requesting data...")
         waveform_data = self._get_waveform_data()
         # grid_data = self._get_grid_data()
         output = dsa.WrapDataObject(vtkUniformGrid.GetData(outInfo))
@@ -417,31 +442,37 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         output.SetOrigin(-D, -D, -D)
         output.SetSpacing(dx, dx, dx)
 
-        # Compute the SWSHs on the grid
-        # This section can be deleted when using SwshGrid input
-        spin_weight = -2
-        ell_max = self.ell_max
-        swsh_grid, r = cached_swsh_grid(
-            size=D,
-            num_points=N,
-            spin_weight=self.spin_weight,
-            ell_max=ell_max,
-            radial_scale=self.radial_scale,
-            clip_y_normal=self.clip_y_normal,
-            clip_z_normal=self.clip_z_normal,
-            activation_offset=self.activation_offset,
-            activation_width=self.activation_width,
-            deactivation_width=self.deactivation_width,
-            add_one_over_r_scaling=self.add_one_over_r_scaling,
-            cache_dir=self.swsh_cache_dir,
-        )
+        grid_params = SWSHParameters()
+        grid_params.size = D
+        grid_params.num_points = N
+        grid_params.spin_weight = self.spin_weight
+        grid_params.ell_max = self.ell_max
+        grid_params.clip_y_normal = self.clip_y_normal
+        grid_params.clip_z_normal = self.clip_z_normal
+
+        swsh_grid = load_or_create_swsh_grid(grid_params, cache_dir=self.swsh_cache_dir)
+        if swsh_grid is None:
+            raise Exception('SWSH grid is None')
+
+        # Apply activation, radial scale etc.
+        adjust_params = GridAdjustParameters()
+
+        adjust_params.radial_scale = self.radial_scale
+        adjust_params.activation_offset = self.activation_offset
+        adjust_params.activation_width = self.activation_width
+        adjust_params.deactivation_width = self.deactivation_width
+        adjust_params.one_over_r_scaling = self.one_over_r_scaling
+
+        swsh_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
+
+        spherical_grid = CartesianGrid(grid_params).spherical()
 
         logger.info(f"Computing volume data at t={t}...")
         start_time = time.time()
 
         # Compute scaled waveform phase on the grid
         # r = vtknp.vtk_to_numpy(grid_data.GetPointData()['RadialCoordinate'])
-        phase = t - r + self.activation_offset * self.radial_scale
+        phase = t - spherical_grid.r + self.activation_offset * self.radial_scale
 
         # Invert rotation direction
         rotation_direction = -1.0 if self.invert_rotation_direction else 1.0
@@ -449,59 +480,14 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         # Compute strain in the volume from the input waveform data
         skip_timesteps = self.keep_every_n_timestep
         waveform_timesteps = waveform_data.RowData["Time"][::skip_timesteps]
-        strain = np.zeros(len(r), dtype=np.complex)
-        # Optimization for when the waveform is sampled uniformly
-        # TODO: Cache this
-        # dt = np.diff(waveform_timesteps)
-        # waveform_uniformly_sampled = np.allclose(dt, dt[0])
-        # global has_shown_warning_nonuniformly_sampled
-        # if waveform_uniformly_sampled:
-        #     dt = dt[0]
-        #     logger.debug(
-        #         f"Waveform sampled uniformly with dt={dt:.2e}, using optimized"
-        #         " interpolation:"
-        #     )
-        #     waveform_start_time = waveform_timesteps[0]
-        #     waveform_start_index = min(
-        #         len(waveform_timesteps) - 2,
-        #         max(
-        #             0, int(np.floor((np.min(phase) - waveform_start_time) / dt))
-        #         ),
-        #     )
-        #     waveform_stop_index = max(
-        #         waveform_start_index + 1,
-        #         min(
-        #             len(waveform_timesteps),
-        #             int(np.ceil((np.max(phase) - waveform_start_time) / dt)),
-        #         ),
-        #     )
-        #     if waveform_stop_index == len(waveform_timesteps):
-        #         waveform_stop_index = -1
-        #     logger.debug(
-        #         "Restricting interpolation to waveform indices"
-        #         f" ({waveform_start_index}, {waveform_stop_index}), that's"
-        #         " between waveform times"
-        #         f" ({waveform_timesteps[waveform_start_index]},"
-        #         f" {waveform_timesteps[waveform_stop_index]}). We will"
-        #         f" interpolate to times between ({np.min(phase)},"
-        #         f" {np.max(phase)}) (should be contained in restricted waveform"
-        #         " range except for boundary effects)."
-        #     )
-        #     waveform_timesteps = waveform_timesteps[
-        #         waveform_start_index:waveform_stop_index
-        #     ]
-        # elif not has_shown_warning_nonuniformly_sampled:
-        #     logger.warning(
-        #         "Waveform is not sampled uniformly so interpolation is slightly"
-        #         " more expensive."
-        #     )
-        #     has_shown_warning_nonuniformly_sampled = True
-        # for i in range(self.modes_selection.GetNumberOfArrays()):
-        #     mode_name = self.modes_selection.GetArrayName(i)
-        for l in range(abs(spin_weight), ell_max + 1):
+        strain = np.zeros(len(spherical_grid.r), dtype=np.complex)
+
+        for i in range(self.modes_selection.GetNumberOfArrays()):
+            mode_name = self.modes_selection.GetArrayName(i)
+        for l in range(abs(grid_params.spin_weight), grid_params.ell_max + 1):
             for abs_m in range(0, l + 1):
                 mode_name = get_mode_name(l, abs_m)
-                strain_mode = np.zeros(len(r), dtype=np.complex)
+                strain_mode = np.zeros(len(spherical_grid.r), dtype=np.complex)
                 if not self.modes_selection.ArrayIsEnabled(mode_name):
                     continue
                 for sign_m in (-1, 1):
@@ -525,11 +511,8 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
                         + rotation_direction * 1j * waveform_mode_data[:, 1]
                     )
                     if self.normalize_each_mode:
-                        waveform_mode_data /= np.max(np.abs(waveform_mode_data))
-                    # if waveform_uniformly_sampled:
-                    #     waveform_mode_data = waveform_mode_data[
-                    #         waveform_start_index:waveform_stop_index
-                    #     ]
+                        waveform_mode_data /= np.max(
+                            np.abs(waveform_mode_data))
                     mode_data = np.interp(
                         phase,
                         waveform_timesteps,
@@ -553,14 +536,17 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
                         )
                         strain_mode_imag_vtk.SetName(mode_name + " Cross")
                         output.GetPointData().AddArray(strain_mode_imag_vtk)
+
         if self.polarizations_selection.ArrayIsEnabled("Plus"):
             strain_real_vtk = vtknp.numpy_to_vtk(np.real(strain), deep=True)
             strain_real_vtk.SetName("Plus strain")
             output.GetPointData().AddArray(strain_real_vtk)
+
         if self.polarizations_selection.ArrayIsEnabled("Cross"):
             strain_imag_vtk = vtknp.numpy_to_vtk(np.imag(strain), deep=True)
             strain_imag_vtk.SetName("Cross strain")
             output.GetPointData().AddArray(strain_imag_vtk)
 
-        logger.info(f"Volume data computed in {time.time() - start_time:.3f}s.")
+        logger.info(
+            f"Volume data computed in {time.time() - start_time:.3f}s.")
         return 1
