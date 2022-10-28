@@ -41,7 +41,7 @@ def new_progress():
     return progress
 
 
-class SWSHParameters():
+class SWSHParameters:
     size: float = 0.0
     num_points: float = 0.0
     spin_weight: int = -2
@@ -50,13 +50,13 @@ class SWSHParameters():
     clip_z_normal: bool = False
 
 
-class SphericalGrid():
+class SphericalGrid:
     r: np.ndarray
     theta: np.ndarray
     phi: np.ndarray
 
 
-class CartesianGrid():
+class CartesianGrid:
     x: np.ndarray
     y: np.ndarray
     z: np.ndarray

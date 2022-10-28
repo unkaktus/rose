@@ -1,9 +1,11 @@
 ## rose
 
 `rose` is a framework to visualize gravitational-wave radiation using ParaView.
-It is based on plugins from `gwpv` written by Nils Vu.
+It is based on plugins from [`gwpv`](https://github.com/nilsvu/gwpv) written by [Nils Vu](https://github.com/nilsvu).
 
 The name `rose` owes to the rose-like shapes of BBH gravitaional emission using `inferno` colormap.
+
+![The rose](rose.png)
 
 ### Architecture
 - ParaView plugins to load waveform and horizon data
