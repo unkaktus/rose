@@ -7,6 +7,13 @@ The name `rose` owes to the rose-like shapes of BBH gravitaional emission using 
 
 ![The rose](rose.png)
 
+> And a rose is still, and always will be, a rose \
+> Doo doo doo doo doo doo mmm \
+> Dooby dooby doo doo doo doo \
+> Doo doo doo doo doo doo mmm
+>
+> _A Rose is Still a Rose_, Aretha Franklin
+
 ### Architecture
 - ParaView plugins to load waveform and horizon data
 - ParaView server packaged into a container together with the plugins and their dependencies
