@@ -60,10 +60,11 @@ class TrajectoryTail(VTKPythonAlgorithmBase):
     def _get_timesteps(self):
         logger.debug("Getting time range from data...")
         trajectory_data = self._get_trajectory_data()
+        if len(trajectory_data.PointData.keys()) == 0:
+            return None
         point_times = trajectory_data.PointData["Time"]
-        # Using a few timesteps within the data range so we can animate through
-        # them in the GUI
-        return np.linspace(point_times[0], point_times[-1], 100)
+        # XXX: why do we need linspace?
+        return np.linspace(point_times[0], point_times[-1], len(point_times))
 
     @smproperty.doublevector(
         name="TimestepValues",
@@ -71,7 +72,8 @@ class TrajectoryTail(VTKPythonAlgorithmBase):
         si_class="vtkSITimeStepsProperty",
     )
     def GetTimestepValues(self):
-        return self._get_timesteps().tolist()
+        timesteps = self._get_timesteps()
+        return timesteps.tolist() if timesteps is not None else None
 
     def RequestInformation(self, request, inInfo, outInfo):
         logger.debug("Requesting information...")

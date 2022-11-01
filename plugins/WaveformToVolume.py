@@ -383,8 +383,7 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         if len(waveform_data.RowData.keys()) == 0:
             return None
         ts = waveform_data.RowData["Time"]
-        # Using a few timesteps within the data range so we can animate through
-        # them in the GUI
+        # XXX: why do we need linspace?
         return np.linspace(ts[0], ts[-1], len(ts))
 
     @smproperty.doublevector(
