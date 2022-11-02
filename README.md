@@ -76,7 +76,8 @@ It can be much easier and faster to run `rose` locally in a Docker container.
 
 1. Run the Docker container, mounting your home folder as `/home` inside the container.
 ```shell
-$ docker run --rm -ti -v $HOME":/home" -p 12321:11111 unkaktus/rose pvserver
+$ docker run --rm -ti -v $HOME":/home" -p 12321:11111 unkaktus/rose
+\# pvserver
 ```
 
 2. Once `pvserver` is running, you can connect to it from ParaView using address `localhost:12321`.
