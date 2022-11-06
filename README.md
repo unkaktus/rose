@@ -74,9 +74,9 @@ Then, specify `localhost:11111` as the address of the server.
 ### Using locally via Docker
 It can be much easier and faster to run `rose` locally in a Docker container.
 
-1. Run the Docker container, mounting your home folder as `/home` inside the container.
+1. Run the Docker container, mounting your home folder as `/home` and grids cache directory `~/.cache` inside the container.
 ```shell
-$ docker run --rm -ti -v $HOME":/home" -p 12321:11111 unkaktus/rose
+$ docker run --rm -ti -v "$HOME:/home" -v "$HOME/.cache:/cache" -e ROSE_CACHE_DIR="/cache" -p 12321:11111 unkaktus/rose
 \# pvserver
 ```
 

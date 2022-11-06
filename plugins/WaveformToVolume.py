@@ -22,7 +22,9 @@ from paraview import util
 
 
 logger = logging.getLogger(__name__)
-tmp_dir = tempfile.mkdtemp(prefix='rose-')
+rose_cache_dir = os.environ.get("ROSE_CACHE_DIR", "")
+if rose_cache_dir == "":
+    rose_cache_dir = tempfile.mkdtemp(prefix='rose-')
 
 
 def new_progress():
@@ -372,7 +374,7 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         self.deactivation_width = value
         self.Modified()
 
-    @smproperty.stringvector(name="SwshCacheDirectory", default_values=os.path.join(tmp_dir, "swsh_cache"))
+    @smproperty.stringvector(name="SwshCacheDirectory", default_values=os.path.join(rose_cache_dir, "swsh_cache"))
     def SetSwshCacheDirectory(self, value):
         self.swsh_cache_dir = value
         self.Modified()
