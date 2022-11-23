@@ -2,3 +2,4 @@ Dockerfile
 /states
 /data
 /cache
+/.git

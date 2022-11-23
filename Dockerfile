@@ -33,7 +33,12 @@ RUN --mount=type=cache,target=/root/.cache pip install \
     scipy \
     spherical \
     quaternionic \
+    scri \
     ;
+
+# Build scri Numba code by importing it.
+# This one-off operation takes around 40s, so we don't want it to happen every time we start a container.
+RUN python3 -c 'import scri'
 
 WORKDIR /opt/rose
 COPY . .
