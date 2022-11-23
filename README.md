@@ -20,9 +20,23 @@ The name `rose` owes to the rose-like shapes of BBH gravitaional emission using 
 - Python script `rose-state.py` to render ParaView state into frames
 - TODO: Slurm SBATCH job script to submit `rose-state.py` for rendering different frame ranges in parallel
 
-### Pipeline
 
-### Installation
+### Running locally via Docker
+
+0. Get Docker via installing Docker Desktop or via https://get.docker.com/.
+
+1. Run the Docker container, mounting your home folder as `/home` and grids cache directory `~/.cache` inside the container.
+```shell
+$ docker run --rm -ti -v "$HOME:/home" -v "$HOME/.cache:/cache" -e ROSE_CACHE_DIR="/cache" -p 12321:11111 unkaktus/rose
+\# pvserver
+```
+
+2. Once `pvserver` is running, you can connect to it from ParaView using address `localhost:12321`.
+
+3. Enjoy loading files from the cluster using `WaveformDataReader`, `TrajectoryDataReader`, and then applying filters `WaveformToVolume` or `TrajectoryTail`!
+
+
+### Installation on an HPC cluster
 1. Load (or install) Apptainer (previously known as Singularity).
 For example:
 
@@ -46,7 +60,7 @@ $ wget https://github.com/unkaktus/rose/releases/download/v0.0.1/rose.sif
 $ chmod +x rose.sif
 ```
 
-### Usage
+### Running on an HPC cluster
 
 1. Run the container on some node:
 ```shell
@@ -67,17 +81,3 @@ $ ssh -L 11111:node-hostname:11111 username@cluster.aei.mpg.de
 ```
 5. In local ParaView, connect to remote ParaView server - `Connect` button.
 Then, specify `localhost:11111` as the address of the server.
-
-6. Enjoy loading files from the cluster using `WaveformDataReader`, `TrajectoryDataReader`, and then applying filters `WaveformToVolume` or `TrajectoryTail`!
-
-
-### Using locally via Docker
-It can be much easier and faster to run `rose` locally in a Docker container.
-
-1. Run the Docker container, mounting your home folder as `/home` and grids cache directory `~/.cache` inside the container.
-```shell
-$ docker run --rm -ti -v "$HOME:/home" -v "$HOME/.cache:/cache" -e ROSE_CACHE_DIR="/cache" -p 12321:11111 unkaktus/rose
-\# pvserver
-```
-
-2. Once `pvserver` is running, you can connect to it from ParaView using address `localhost:12321`.
