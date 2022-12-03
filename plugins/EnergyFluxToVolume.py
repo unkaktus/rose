@@ -287,7 +287,7 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         self.spin_weight = value
         self.Modified()
 
-    @smproperty.doublevector(name="RadialScale", default_values=1)
+    @smproperty.doublevector(name="RadialScale", default_values=10)
     def SetRadialScale(self, value):
         self.radial_scale = value
         self.Modified()
