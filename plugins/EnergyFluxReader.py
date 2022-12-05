@@ -74,8 +74,18 @@ class EnergyFluxReader(VTKPythonAlgorithmBase):
             self.spin_weight = 0
             self.ell_max = 8
 
-            # Calculate the energy flux modes coefficients
-            energy_flux = abd.sigma.dot * abd.sigma.dot.bar / (8*np.pi)
+
+            # Cache calculated energy flux
+            energy_flux = np.array([])
+            energy_flux_filename = f'{self._filename}.energy_flux.npy'
+
+            try:
+                energy_flux = np.load(energy_flux_filename)
+            except:
+                # Calculate the energy flux modes coefficients
+                energy_flux = abd.sigma.dot * abd.sigma.dot.bar / (8*np.pi)
+                np.save(energy_flux_filename, energy_flux)
+
             
             # Add modes
             for l in range(np.abs(self.spin_weight), self.ell_max + 1):
