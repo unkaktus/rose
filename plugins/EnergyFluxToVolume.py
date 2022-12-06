@@ -241,7 +241,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
 
         self.component_selection = vtkDataArraySelection()
         self.component_selection.AddArray("Real")
-        self.component_selection.AddArray("Imaginary")
         self.component_selection.AddObserver(
             "ModifiedEvent", create_modified_callback(self)
         )
@@ -298,6 +297,12 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
     def SetOneOverRScaling(self, value):
         self.one_over_r_scaling = value
         self.Modified()
+
+    @smproperty.doublevector(name="ValueThreshold", default_values=1e-16)
+    def SetValueThreshold(self, value):
+        self.value_threshold = value
+        self.Modified()
+
 
     @smproperty.doublevector(name="ActivationOffset", default_values=10)
     def SetActivationOffset(self, value):
@@ -447,30 +452,19 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
                     )
                     quantity_mode += mode_data * mode_profile
                 quantity += quantity_mode
-                # Expose individual modes in output
-                if self.store_individual_modes:
-                    if self.component_selection.ArrayIsEnabled("Real"):
-                        quantity_mode_real_vtk = vtknp.numpy_to_vtk(
-                            np.real(quantity_mode), deep=True
-                        )
-                        quantity_mode_real_vtk.SetName(mode_name + " Real")
-                        output.GetPointData().AddArray(quantity_mode_real_vtk)
-                    if self.component_selection.ArrayIsEnabled("Imaginary"):
-                        quantity_mode_imag_vtk = vtknp.numpy_to_vtk(
-                            np.imag(quantity_mode), deep=True
-                        )
-                        quantity_mode_imag_vtk.SetName(mode_name + " Imaginary")
-                        output.GetPointData().AddArray(quantity_mode_imag_vtk)
+
+
+        real_energy_flux = np.real(quantity)
+
+        np.save('/tmp/volume_flux.npy', real_energy_flux)
+
+        # Clip from below
+        np.maximum(real_energy_flux, self.value_threshold, out=real_energy_flux)
 
         # Add entire sum to the output
         if self.component_selection.ArrayIsEnabled("Real"):
             quantity_real_vtk = vtknp.numpy_to_vtk(np.real(quantity), deep=True)
             quantity_real_vtk.SetName("Real")
             output.GetPointData().AddArray(quantity_real_vtk)
-
-        if self.component_selection.ArrayIsEnabled("Imaginary"):
-            quantity_imag_vtk = vtknp.numpy_to_vtk(np.imag(quantity), deep=True)
-            quantity_imag_vtk.SetName("Imaginary")
-            output.GetPointData().AddArray(quantity_imag_vtk)
 
         return 1
