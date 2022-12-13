@@ -7,12 +7,12 @@ The name `rose` owes to the rose-like shapes of BBH gravitaional emission using 
 
 ![The rose](rose.png)
 
-> And a rose is still, and always will be, a rose \
-> Doo doo doo doo doo doo mmm \
-> Dooby dooby doo doo doo doo \
-> Doo doo doo doo doo doo mmm
->
-> _A Rose is Still a Rose_, Aretha Franklin
+> The closer I get to you \
+> A feeling comes over me (Me, too) \
+> Falling closer, sweet as the gravity \
+> The closer I get to you
+
+[_The Closer I Get to You_ - Roberta Flack & Donny Hathaway](https://air.unkaktus.art/WWW92xgv94c)
 
 ### Architecture
 - ParaView plugins to load waveform and horizon data
