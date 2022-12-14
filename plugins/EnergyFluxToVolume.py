@@ -461,6 +461,9 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         # Clip from below
         np.maximum(real_energy_flux, self.value_threshold, out=real_energy_flux)
 
+        # Take log here instead of in ParaView
+        np.log10(real_energy_flux, out=real_energy_flux)
+
         # Add entire sum to the output
         if self.component_selection.ArrayIsEnabled("Real"):
             quantity_real_vtk = vtknp.numpy_to_vtk(np.real(quantity), deep=True)
