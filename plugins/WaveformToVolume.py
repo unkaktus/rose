@@ -167,19 +167,19 @@ class GridAdjustParameters():
 
 
 def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustParameters):
-    r = CartesianGrid(grid_params).spherical().r
+    spherical_grid = CartesianGrid(grid_params).spherical()
     screen = activation(
-        x=r - params.activation_offset,
+        x = spherical_grid.r - params.activation_offset,
         width=params.activation_width,
-    ) * deactivation(x=r,
+    ) * deactivation(x = spherical_grid.r,
                      width=params.deactivation_width,
                      outer=grid_params.size)
     swsh_grid *= screen.reshape(screen.shape + (1,))
     # Apply radial scale
-    r *= params.radial_scale
+    spherical_grid.r *= params.radial_scale
     if params.one_over_r_scaling:
-        swsh_grid /= (r + 1.0e-30).reshape(r.shape + (1,))
-    return swsh_grid
+        swsh_grid /= (spherical_grid.r + 1.0e-30).reshape(spherical_grid.r.shape + (1,))
+    return swsh_grid, spherical_grid
 
 
 # Needed by ParaView
@@ -464,9 +464,7 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         adjust_params.deactivation_width = self.deactivation_width
         adjust_params.one_over_r_scaling = self.one_over_r_scaling
 
-        swsh_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
-
-        spherical_grid = CartesianGrid(grid_params).spherical()
+        swsh_grid, spherical_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
 
         logger.info(f"Computing volume data at t={t}...")
         start_time = time.time()
