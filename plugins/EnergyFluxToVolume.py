@@ -134,35 +134,12 @@ def load_or_create_swsh_grid(p: SWSHParameters, cache_dir: str):
         save_swsh_grid(swsh_grid, p, cache_dir)
     return swsh_grid
 
-
-def smoothstep(x):
-    return np.where(x < 0, 0, np.where(x <= 1, 3 * x**2 - 2 * x**3, 1))
-
-
-def activation(x, width):
-    return smoothstep(x / width)
-
-
-def deactivation(x, width, outer):
-    return smoothstep((outer - x) / width)
-
-
 class GridAdjustParameters():
-    activation_offset: float
-    activation_width: float
-    deactivation_width: float
     one_over_r_scaling: bool
 
 
 def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustParameters):
     spherical_grid = CartesianGrid(grid_params).spherical()
-    screen = activation(
-        x = spherical_grid.r - params.activation_offset,
-        width=params.activation_width,
-    ) * deactivation(x = spherical_grid.r,
-                     width=params.deactivation_width,
-                     outer=grid_params.size)
-    swsh_grid *= screen.reshape(screen.shape + (1,))
     if params.one_over_r_scaling:
         swsh_grid /= (spherical_grid.r + 1.0e-30).reshape(spherical_grid.r.shape + (1,))
     return swsh_grid, spherical_grid
@@ -299,22 +276,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         self.value_threshold = value
         self.Modified()
 
-
-    @smproperty.doublevector(name="ActivationOffset", default_values=10)
-    def SetActivationOffset(self, value):
-        self.activation_offset = value
-        self.Modified()
-
-    @smproperty.doublevector(name="ActivationWidth", default_values=10)
-    def SetActivationWidth(self, value):
-        self.activation_width = value
-        self.Modified()
-
-    @smproperty.doublevector(name="DeactivationWidth", default_values=10)
-    def SetDeactivationWidth(self, value):
-        self.deactivation_width = value
-        self.Modified()
-
     @smproperty.stringvector(name="SwshCacheDirectory", default_values=os.path.join(rose_cache_dir, "swsh_cache"))
     def SetSwshCacheDirectory(self, value):
         self.swsh_cache_dir = value
@@ -394,19 +355,14 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         if swsh_grid is None:
             raise Exception('SWSH grid is None')
 
-        # Apply activation, radial scale etc.
         adjust_params = GridAdjustParameters()
-
-        adjust_params.activation_offset = self.activation_offset
-        adjust_params.activation_width = self.activation_width
-        adjust_params.deactivation_width = self.deactivation_width
         adjust_params.one_over_r_scaling = self.one_over_r_scaling
 
         swsh_grid, spherical_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
 
         # Compute scaled waveform phase on the grid
         # r = vtknp.vtk_to_numpy(grid_data.GetPointData()['RadialCoordinate'])
-        phase = (t + self.time_shift) - spherical_grid.r + self.activation_offset
+        phase = (t + self.time_shift) - spherical_grid.r
 
         # Compute quantity in the volume from the input waveform data
         waveform_timesteps = waveform_data.RowData["Time"]
