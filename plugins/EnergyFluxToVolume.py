@@ -199,7 +199,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
             outputType="vtkUniformGrid",
         )
 
-        ### XXX temp. set spin weight to 0. It should be possible to set it via the selection below.
         self.spin_weight = 0
         self.ell_max = 8
 
@@ -253,11 +252,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
     @smproperty.intvector(name="EllMax", default_values=8)
     def SetEllMax(self, value):
         self.ell_max = value
-        self.Modified()
-
-    @smproperty.intvector(name="SpinWeight", default_values=0)
-    def SetSpinWeight(self, value):
-        self.spin_weight = value
         self.Modified()
 
     @smproperty.doublevector(name="TimeShift", default_values=0.0)
