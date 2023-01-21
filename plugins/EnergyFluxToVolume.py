@@ -151,7 +151,6 @@ class GridAdjustParameters():
     activation_offset: float
     activation_width: float
     deactivation_width: float
-    radial_scale: float
     one_over_r_scaling: bool
 
 
@@ -164,8 +163,6 @@ def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustP
                      width=params.deactivation_width,
                      outer=grid_params.size)
     swsh_grid *= screen.reshape(screen.shape + (1,))
-    # Apply radial scale
-    spherical_grid.r *= params.radial_scale
     if params.one_over_r_scaling:
         swsh_grid /= (spherical_grid.r + 1.0e-30).reshape(spherical_grid.r.shape + (1,))
     return swsh_grid, spherical_grid
@@ -286,11 +283,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         self.spin_weight = value
         self.Modified()
 
-    @smproperty.doublevector(name="RadialScale", default_values=10)
-    def SetRadialScale(self, value):
-        self.radial_scale = value
-        self.Modified()
-
     @smproperty.doublevector(name="TimeShift", default_values=0.0)
     def SetTimeShift(self, value):
         self.time_shift = value
@@ -405,7 +397,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         # Apply activation, radial scale etc.
         adjust_params = GridAdjustParameters()
 
-        adjust_params.radial_scale = self.radial_scale
         adjust_params.activation_offset = self.activation_offset
         adjust_params.activation_width = self.activation_width
         adjust_params.deactivation_width = self.deactivation_width
@@ -415,7 +406,7 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
 
         # Compute scaled waveform phase on the grid
         # r = vtknp.vtk_to_numpy(grid_data.GetPointData()['RadialCoordinate'])
-        phase = (t + self.time_shift) - spherical_grid.r + self.activation_offset * self.radial_scale
+        phase = (t + self.time_shift) - spherical_grid.r + self.activation_offset
 
         # Compute quantity in the volume from the input waveform data
         waveform_timesteps = waveform_data.RowData["Time"]
