@@ -191,11 +191,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
             self,
             nInputPorts=1,
             nOutputPorts=1,
-            # Choosing `vtkUniformGrid` for the output for the following reasons:
-            # - `vtkRectilinearGrid` doesn't support volume rendering
-            #   (in Paraview v5.7.0 at least)
-            # - The unstructured grids don't support the 'GPU Based'
-            #   volume rendering mode, which can do shading and looks nice
             outputType="vtkUniformGrid",
         )
 
@@ -209,8 +204,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         self.modes_selection.AddObserver(
             "ModifiedEvent", create_modified_callback(self)
         )
-
-        # Add real and imaginary parts of our quantity
 
         self.component_selection = vtkDataArraySelection()
         self.component_selection.AddArray("Real")
@@ -237,7 +230,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
     def GetPolarizations(self):
         return self.component_selection
 
-    # Not needed when using SwshGrid input
     @smproperty.doublevector(name="Size", default_values=100)
     def SetSize(self, value):
         self.size = value
@@ -299,11 +291,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
 
         info = outInfo.GetInformationObject(0)
 
-        # For the `vtkUniformGrid` output we need to provide extents
-        # so that it gets rendered at all.
-        # When using the SwshGrid input we can retrieve them from the
-        # information object and pass them on.
-        # grid_extents = grid_info.Get(self.GetExecutive().WHOLE_EXTENT())
         N = self.num_points_per_dim
         N_y = N
         N_z = N
@@ -315,7 +302,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         # WaveformDataReader.
         set_timesteps(self, self._get_timesteps(), logger=logger)
 
-        # logger.debug("Information object: {}".format(info))
         return 1
 
     def RequestData(self, request, inInfo, outInfo):
@@ -328,10 +314,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         N = self.num_points_per_dim
         D = self.size
 
-        # We may have to forward the grid data here when using SwshGrid input
-        # output.SetDimensions(*grid_data.GetDimensions())
-        # output.SetOrigin(*grid_data.GetOrigin())
-        # output.SetSpacing(*grid_data.GetSpacing())
         dx = 2.0 * D / N
         N_y = N
         N_z = N
@@ -355,7 +337,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         swsh_grid, spherical_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
 
         # Compute scaled waveform phase on the grid
-        # r = vtknp.vtk_to_numpy(grid_data.GetPointData()['RadialCoordinate'])
         phase = (t + self.time_shift) - spherical_grid.r
 
         # Compute quantity in the volume from the input waveform data
@@ -374,7 +355,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
                     m = abs_m * sign_m
                     dataset_name = "Y_l{}_m{}".format(l, m)
                     mode_profile = swsh_grid[:, LM_index(l, m, 0)]
-                    # mode_profile = vtknp.vtk_to_numpy(grid_data.GetPointData()[dataset_name])
                     waveform_mode_data = waveform_data.RowData[dataset_name]
                     if isinstance(waveform_mode_data, dsa.VTKNoneArray):
                         logger.warning(
@@ -398,8 +378,6 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
 
 
         real_energy_flux = np.real(quantity)
-
-        np.save('/tmp/volume_flux.npy', real_energy_flux)
 
         # Clip from below
         np.maximum(real_energy_flux, self.value_threshold, out=real_energy_flux)
