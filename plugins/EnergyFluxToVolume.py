@@ -39,8 +39,6 @@ def create_modified_callback(anobject):
 
     return _markmodified
 
-
-
 class SWSHParameters:
     size: float
     num_points: float
@@ -378,6 +376,9 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
 
 
         real_energy_flux = np.real(quantity)
+
+        # Spherical clip
+        real_energy_flux *= np.where(spherical_grid.r < grid_params.size*0.96, 1, 0)
 
         # Clip from below
         np.maximum(real_energy_flux, self.value_threshold, out=real_energy_flux)
