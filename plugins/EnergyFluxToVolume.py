@@ -206,7 +206,7 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         )
 
         self.component_selection = vtkDataArraySelection()
-        self.component_selection.AddArray("Real")
+        self.component_selection.AddArray("Energy flux")
         self.component_selection.AddObserver(
             "ModifiedEvent", create_modified_callback(self)
         )
@@ -386,9 +386,9 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         np.log10(real_energy_flux, out=real_energy_flux)
 
         # Add entire sum to the output
-        if self.component_selection.ArrayIsEnabled("Real"):
-            quantity_real_vtk = vtknp.numpy_to_vtk(np.real(quantity), deep=True)
-            quantity_real_vtk.SetName("Real")
+        if self.component_selection.ArrayIsEnabled("Energy flux"):
+            quantity_real_vtk = vtknp.numpy_to_vtk(real_energy_flux, deep=True)
+            quantity_real_vtk.SetName("Energy flux")
             output.GetPointData().AddArray(quantity_real_vtk)
 
         return 1
