@@ -291,6 +291,10 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         self.radial_scale = value
         self.Modified()
 
+    @smproperty.doublevector(name="TimeShift", default_values=0.0)
+    def SetTimeShift(self, value):
+        self.time_shift = value
+        self.Modified()
 
     @smproperty.intvector(name="OneOverRScaling", default_values=False)
     @smdomain.xml('<BooleanDomain name="bool"/>')
@@ -411,7 +415,7 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
 
         # Compute scaled waveform phase on the grid
         # r = vtknp.vtk_to_numpy(grid_data.GetPointData()['RadialCoordinate'])
-        phase = t - spherical_grid.r + self.activation_offset * self.radial_scale
+        phase = (t + self.time_shift) - spherical_grid.r + self.activation_offset * self.radial_scale
 
         # Compute quantity in the volume from the input waveform data
         waveform_timesteps = waveform_data.RowData["Time"]
