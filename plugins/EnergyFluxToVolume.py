@@ -135,13 +135,13 @@ def load_or_create_swsh_grid(p: SWSHParameters, cache_dir: str):
     return swsh_grid
 
 class GridAdjustParameters():
-    one_over_r_scaling: bool
+    scale_with_distance: bool
 
 
 def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustParameters):
     spherical_grid = CartesianGrid(grid_params).spherical()
-    if params.one_over_r_scaling:
-        swsh_grid /= (spherical_grid.r + 1.0e-30).reshape(spherical_grid.r.shape + (1,))
+    if params.scale_with_distance:
+        swsh_grid /= (spherical_grid.r**2 + 1.0e-30).reshape(spherical_grid.r.shape + (1,))
     return swsh_grid, spherical_grid
 
 
@@ -265,10 +265,10 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         self.time_shift = value
         self.Modified()
 
-    @smproperty.intvector(name="OneOverRScaling", default_values=False)
+    @smproperty.intvector(name="ScaleWithDistance", default_values=False)
     @smdomain.xml('<BooleanDomain name="bool"/>')
-    def SetOneOverRScaling(self, value):
-        self.one_over_r_scaling = value
+    def SetScaleWithDistance(self, value):
+        self.scale_with_distance = value
         self.Modified()
 
     @smproperty.doublevector(name="ValueThreshold", default_values=1e-16)
@@ -356,7 +356,7 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
             raise Exception('SWSH grid is None')
 
         adjust_params = GridAdjustParameters()
-        adjust_params.one_over_r_scaling = self.one_over_r_scaling
+        adjust_params.scale_with_distance = self.scale_with_distance
 
         swsh_grid, spherical_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
 
