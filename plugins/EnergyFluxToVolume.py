@@ -1,14 +1,13 @@
+
+import os
+import hashlib
+import logging
+import tempfile
+
+import numpy as np
 import spherical
 import quaternionic
 from spherical_functions import LM_index
-import scri
-import numpy as np
-import os
-import hashlib
-import time
-import logging
-import sys
-import tempfile
 
 from vtkmodules.vtkCommonDataModel import vtkUniformGrid
 from vtkmodules.vtkCommonCore import vtkDataArraySelection
