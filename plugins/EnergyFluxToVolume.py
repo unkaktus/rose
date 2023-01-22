@@ -5,6 +5,7 @@ import logging
 import tempfile
 
 import numpy as np
+from scipy import special
 import spherical
 import quaternionic
 from spherical_functions import LM_index
@@ -37,6 +38,12 @@ def create_modified_callback(anobject):
             o.Modified()
 
     return _markmodified
+
+
+def smooth_step(x, center, width):
+    return 1-special.erf((x-center)/width)
+
+
 
 class SWSHParameters:
     size: float
@@ -218,9 +225,10 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
     def GetModes(self):
         return self.modes_selection
 
-    @smproperty.intvector(name="StoreIndividualModes", default_values=False)
-    def SetStoreIndividualModes(self, value):
-        self.store_individual_modes = value
+    @smproperty.intvector(name="SmoothClip", default_values=True)
+    @smdomain.xml('<BooleanDomain name="bool"/>')
+    def SetSmoothClip(self, value):
+        self.smooth_clip = value
         self.Modified()
 
     @smproperty.dataarrayselection(name="Components")
@@ -374,20 +382,32 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
                 quantity += quantity_mode
 
 
-        real_energy_flux = np.real(quantity)
+        energy_flux = np.real(quantity)
 
         # Spherical clip
-        real_energy_flux *= np.where(spherical_grid.r < grid_params.size*0.96, 1, 0)
+        mask = spherical_grid.r > grid_params.size*0.96
+
+        if self.smooth_clip:
+            width = 0.005 * grid_params.size
+            screen = smooth_step(
+                x = spherical_grid.r,
+                center = grid_params.size - 2*width,
+                width = width,
+            )
+
+            energy_flux[mask] *= screen[mask]
+        else:
+            energy_flux[mask] = 0.0
 
         # Clip from below
-        np.maximum(real_energy_flux, self.value_threshold, out=real_energy_flux)
+        np.maximum(energy_flux, self.value_threshold, out=energy_flux)
 
         # Take log here instead of in ParaView
-        np.log10(real_energy_flux, out=real_energy_flux)
+        np.log10(energy_flux, out=energy_flux)
 
         # Add entire sum to the output
         if self.component_selection.ArrayIsEnabled("Energy flux"):
-            quantity_real_vtk = vtknp.numpy_to_vtk(real_energy_flux, deep=True)
+            quantity_real_vtk = vtknp.numpy_to_vtk(energy_flux, deep=True)
             quantity_real_vtk.SetName("Energy flux")
             output.GetPointData().AddArray(quantity_real_vtk)
 
