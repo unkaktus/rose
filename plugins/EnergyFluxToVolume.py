@@ -44,6 +44,32 @@ def smooth_step(x, center, width):
     return 1-special.erf((x-center)/width)
 
 
+from astropy import units as u, constants as const
+
+class GU():
+    def __init__(self, v):
+        self.v = v*u.Msun
+        self.M = self._to(u.g)
+        self.L = self._to(u.cm)
+        self.T = self._to(u.s)
+        self.Energy = self.MLT(1, 2, -2)
+        self.Luminosity = self.Energy/self.T
+    def _to(self, unit):
+        if unit.is_equivalent(u.Msun):
+            return self.v.to(unit)
+        if unit.is_equivalent(u.cm):
+            return (self.v*const.G/const.c**2).to(unit)
+        if unit.is_equivalent(u.s):
+            return (self.v*const.G/const.c**3).to(unit)
+    def MLT(self, m, l, t):
+        return self.M**m * self.L**l * self.T**t
+
+def eSPL(energy_flux, distance):
+    gu = GU(1)
+    intensity = energy_flux * gu.Luminosity / (distance**2)
+    SPL = 10 * np.log10(intensity*u.m**2/(1e-12*u.W))
+    return SPL
+
 
 class SWSHParameters:
     size: float
@@ -138,12 +164,24 @@ def load_or_create_swsh_grid(p: SWSHParameters, cache_dir: str):
         save_swsh_grid(swsh_grid, p, cache_dir)
     return swsh_grid
 
+def smoothstep(x):
+    return np.where(x < 0, 0, np.where(x <= 1, 3 * x**2 - 2 * x**3, 1))
+
+def deactivation(x, width, outer):
+    return smoothstep((outer - x) / width)
+
 class GridAdjustParameters():
     scale_with_distance: bool
 
 
 def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustParameters):
     spherical_grid = CartesianGrid(grid_params).spherical()
+
+    screen = deactivation(x = spherical_grid.r,
+                     width=60,
+                     outer=grid_params.size)
+    swsh_grid *= screen.reshape(screen.shape + (1,))
+
     if params.scale_with_distance:
         swsh_grid /= (spherical_grid.r**2 + 1.0e-30).reshape(spherical_grid.r.shape + (1,))
     return swsh_grid, spherical_grid
@@ -210,7 +248,8 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         )
 
         self.component_selection = vtkDataArraySelection()
-        self.component_selection.AddArray("Energy flux")
+        self.component_selection.AddArray("Energy flux (log10)")
+        self.component_selection.AddArray("eSPL in dB")
         self.component_selection.AddObserver(
             "ModifiedEvent", create_modified_callback(self)
         )
@@ -265,6 +304,11 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
     @smproperty.doublevector(name="ValueThreshold", default_values=1e-16)
     def SetValueThreshold(self, value):
         self.value_threshold = value
+        self.Modified()
+
+    @smproperty.doublevector(name="DistanceInMpc", default_values=300)
+    def SetDistance(self, value):
+        self.distance = value
         self.Modified()
 
     @smproperty.stringvector(name="SwshCacheDirectory", default_values=os.path.join(rose_cache_dir, "swsh_cache"))
@@ -388,27 +432,26 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         mask = spherical_grid.r > grid_params.size*0.96
 
         if self.smooth_clip:
-            width = 0.005 * grid_params.size
-            screen = smooth_step(
-                x = spherical_grid.r,
-                center = grid_params.size - 2*width,
-                width = width,
-            )
-
-            energy_flux[mask] *= screen[mask]
-        else:
             energy_flux[mask] = 0.0
 
         # Clip from below
         np.maximum(energy_flux, self.value_threshold, out=energy_flux)
 
         # Take log here instead of in ParaView
-        np.log10(energy_flux, out=energy_flux)
+        energy_flux_log = np.log10(energy_flux)
 
         # Add entire sum to the output
-        if self.component_selection.ArrayIsEnabled("Energy flux"):
-            quantity_real_vtk = vtknp.numpy_to_vtk(energy_flux, deep=True)
-            quantity_real_vtk.SetName("Energy flux")
-            output.GetPointData().AddArray(quantity_real_vtk)
+        if self.component_selection.ArrayIsEnabled("Energy flux (log10)"):
+            quantity_vtk = vtknp.numpy_to_vtk(energy_flux_log, deep=True)
+            quantity_vtk.SetName("Energy flux (log10)")
+            output.GetPointData().AddArray(quantity_vtk)
+
+        # Effective Sound Pressure Level in dB
+        espl = eSPL(energy_flux, distance=self.distance*u.Mpc)
+
+        if self.component_selection.ArrayIsEnabled("eSPL in dB"):
+            quantity_vtk = vtknp.numpy_to_vtk(espl, deep=True)
+            quantity_vtk.SetName("eSPL in dB")
+            output.GetPointData().AddArray(quantity_vtk)
 
         return 1
