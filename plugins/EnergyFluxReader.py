@@ -83,7 +83,7 @@ class EnergyFluxReader(VTKPythonAlgorithmBase):
                 energy_flux = np.load(energy_flux_filename)
             except:
                 # Calculate the energy flux modes coefficients
-                energy_flux = abd.sigma.dot * abd.sigma.dot.bar / (8*np.pi)
+                energy_flux = np.array(abd.sigma.dot * abd.sigma.dot.bar)
                 np.save(energy_flux_filename, energy_flux)
 
             
