@@ -3,19 +3,22 @@ import os
 import hashlib
 import logging
 import tempfile
+import time
 
 import numpy as np
 from scipy import special
 import spherical
 import quaternionic
 from spherical_functions import LM_index
+import scri
+
 
 from vtkmodules.vtkCommonDataModel import vtkUniformGrid
 from vtkmodules.vtkCommonCore import vtkDataArraySelection
 from vtkmodules.util.vtkAlgorithm import VTKPythonAlgorithmBase
 from vtkmodules.numpy_interface import dataset_adapter as dsa
 from paraview.vtk.util import numpy_support as vtknp
-from paraview.util.vtkAlgorithm import smdomain, smproperty, smproxy
+from paraview.util.vtkAlgorithm import smdomain, smhint, smproperty, smproxy
 from paraview import util
 
 
@@ -224,20 +227,28 @@ def get_mode_name(l, abs_m):
     return "({}, {}) Mode".format(l, abs_m)
 
 
-@smproxy.filter(label="Energy Flux To Volume")
-@smproperty.input(name="WaveformData", port_index=0)
-@smdomain.datatype(dataTypes=["vtkTable"])
-class EnergyFluxToVolume(VTKPythonAlgorithmBase):
+@smproxy.reader(
+    name="EnergyFluxVolumeReader",
+    label="Energy Flux Volume Reader",
+    extensions="h5",
+    file_description="HDF5 files",
+)
+class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
     def __init__(self):
         VTKPythonAlgorithmBase.__init__(
             self,
-            nInputPorts=1,
+            nInputPorts=0,
             nOutputPorts=1,
             outputType="vtkUniformGrid",
         )
 
+        self._filename = None
+        self._subfile = None
+
         self.spin_weight = 0
         self.ell_max = 8
+
+        self.timesteps = None
 
         self.modes_selection = vtkDataArraySelection()
         for l in range(np.abs(self.spin_weight), self.ell_max + 1):
@@ -254,11 +265,25 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
             "ModifiedEvent", create_modified_callback(self)
         )
 
-    def FillInputPortInformation(self, port, info):
-        info.Set(self.INPUT_REQUIRED_DATA_TYPE(), "vtkTable")
+
+    @smproperty.stringvector(name="FileName")
+    @smdomain.filelist()
+    @smhint.filechooser(extensions="h5", file_description="HDF5 files")
+    def SetFileName(self, value):
+        self._filename = value
+        self.Modified()
+
+    @smproperty.stringvector(
+        name="Subfile", default_values=["Extrapolated_N2.dir"]
+    )
+
+    def SetSubfile(self, value):
+        self._subfile = value
+        self.Modified()
+
 
     def _get_waveform_data(self):
-        return dsa.WrapDataObject(self.GetInputDataObject(0, 0))
+        return self.waveform_data
 
     @smproperty.dataarrayselection(name="Modes")
     def GetModes(self):
@@ -317,12 +342,7 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         self.Modified()
 
     def _get_timesteps(self):
-        logger.debug("Getting time range from data...")
-        waveform_data = self._get_waveform_data()
-        if len(waveform_data.RowData.keys()) == 0:
-            return None
-        ts = waveform_data.RowData["Time"]
-        # XXX: why do we need linspace?
+        ts = self.timesteps
         return np.linspace(ts[0], ts[-1], len(ts))
 
     @smproperty.doublevector(
@@ -330,13 +350,19 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         information_only="1",
         si_class="vtkSITimeStepsProperty",
     )
+
+    def _get_array_selection(self):
+        return self._arrayselection_cd, self._arrayselection_pd
+
     def GetTimestepValues(self):
         timesteps = self._get_timesteps()
+        set_timesteps(self, self._get_timesteps(), logger=logger)
         return timesteps.tolist() if timesteps is not None else None
 
     def RequestInformation(self, request, inInfo, outInfo):
         logger.debug("Requesting information...")
-        waveform_data_info = inInfo[0].GetInformationObject(0)
+
+        self.load_data()
 
         info = outInfo.GetInformationObject(0)
 
@@ -353,10 +379,38 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
 
         return 1
 
+    def load_data(self):
+        if self.timesteps is not None:
+            return
+        if self._filename is None:
+            return
+        if self._subfile is None:
+            return
+        
+        abd = scri.SpEC.create_abd_from_h5("SXS", h = f"{self._filename}/{self._subfile}")
+            
+        # Get the timesteps
+        self.timesteps = abd.t
+
+        # Cache calculated energy flux
+        energy_flux = np.array([])
+        energy_flux_filename = f'{self._filename}.energy_flux.npy'
+
+        try:
+            energy_flux = np.load(energy_flux_filename)
+        except:
+            # Calculate the energy flux modes coefficients
+            energy_flux = np.array(abd.sigma.dot * abd.sigma.dot.bar)
+            np.save(energy_flux_filename, energy_flux)
+
+        self.energy_flux = energy_flux
+
     def RequestData(self, request, inInfo, outInfo):
         logger.info("Requesting data...")
-        waveform_data = self._get_waveform_data()
-        # grid_data = self._get_grid_data()
+
+        set_timesteps(self, self._get_timesteps(), logger=logger)
+
+
         output = dsa.WrapDataObject(vtkUniformGrid.GetData(outInfo))
 
         t = get_timestep(self, logger=logger)
@@ -389,7 +443,7 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
         phase = (t + self.time_shift) - spherical_grid.r
 
         # Compute quantity in the volume from the input waveform data
-        waveform_timesteps = waveform_data.RowData["Time"]
+        waveform_timesteps = self.timesteps
         quantity = np.zeros(len(spherical_grid.r), dtype=np.complex)
 
         for i in range(self.modes_selection.GetNumberOfArrays()):
@@ -404,17 +458,8 @@ class EnergyFluxToVolume(VTKPythonAlgorithmBase):
                     m = abs_m * sign_m
                     dataset_name = "Y_l{}_m{}".format(l, m)
                     mode_profile = swsh_grid[:, LM_index(l, m, 0)]
-                    waveform_mode_data = waveform_data.RowData[dataset_name]
-                    if isinstance(waveform_mode_data, dsa.VTKNoneArray):
-                        logger.warning(
-                            f"Dataset '{dataset_name}' for mode {(l, m)} not"
-                            " available in waveform data, skipping."
-                        )
-                        continue
+                    waveform_mode_data = np.array(self.energy_flux[:, LM_index(l,m,0)])
 
-                    waveform_mode_data = (
-                        waveform_mode_data[:, 0] + 1j * waveform_mode_data[:, 1]
-                    )
                     mode_data = np.interp(
                         phase,
                         waveform_timesteps,
