@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env -S python -u
 
 import paraview.simple as pv
 import numpy as np
