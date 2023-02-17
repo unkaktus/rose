@@ -1,6 +1,7 @@
 ## rose
 
 `rose` is a framework to visualize gravitational-wave radiation using ParaView.
+
 It is based on plugins from [`gwpv`](https://github.com/nilsvu/gwpv) written by [Nils Vu](https://github.com/nilsvu).
 
 The name `rose` owes to the rose-like shapes of BBH gravitaional emission using `inferno` colormap.
@@ -17,9 +18,11 @@ The name `rose` owes to the rose-like shapes of BBH gravitaional emission using 
 ### Architecture
 - ParaView plugins to load waveform and horizon data
 - ParaView server packaged into a container together with the plugins and their dependencies
-- Python script `rose-state.py` to render ParaView state into frames
-- TODO: Slurm SBATCH job script to submit `rose-state.py` for rendering different frame ranges in parallel
+- Python script `render/render_state.py` to render ParaView state into frames
+- Slurm job script `render/job.sh` to submit `render/render_state.py` for rendering frame ranges in parallel
 
+### Requirements
+* ParaView 5.10.1 on your desktop
 
 ### Running locally via Docker
 
@@ -28,7 +31,7 @@ The name `rose` owes to the rose-like shapes of BBH gravitaional emission using 
 1. Run the Docker container, mounting your home folder as `/home` and grids cache directory `~/.cache` inside the container.
 ```shell
 $ docker run --rm -ti -v "$HOME:/home" -v "$HOME/.cache:/cache" -e ROSE_CACHE_DIR="/cache" -p 12321:11111 unkaktus/rose
-\# pvserver
+$ pvserver
 ```
 
 2. Once `pvserver` is running, you can connect to it from ParaView using address `localhost:12321`.
@@ -37,7 +40,8 @@ $ docker run --rm -ti -v "$HOME:/home" -v "$HOME/.cache:/cache" -e ROSE_CACHE_DI
 
 
 ### Installation on an HPC cluster
-1. Load (or install) Apptainer (previously known as Singularity).
+1. Load or install Apptainer. It is likely it is modules on your system.
+
 For example:
 
 ```shell
@@ -49,22 +53,19 @@ $ module load apptainer-1.0.3-gcc-12.2.0-aojy6ca
 2. Create a directory to store executable container files:
 ```shell
 $ mkdir $HOME/apptainers
-$ export PATH=$HOME/apptainers:$PATH
 ```
-You might want to add it to `PATH` into your `.bashrc` file permanently.
 
 3. There, download latest `rose` container file from GitHub:
 ```shell
 $ cd ~/apptainers
-$ wget https://github.com/unkaktus/rose/releases/download/v0.0.1/rose.sif
-$ chmod +x rose.sif
+$ wget https://github.com/unkaktus/rose/releases/download/v0.1.0/rose-v0.1.0.sif
 ```
 
 ### Running on an HPC cluster
 
 1. Run the container on some node:
 ```shell
-$ srun -N1 -n1 --exclusive --pty rose.sif
+$ srun -N1 -n1 --exclusive --pty apptainer shell --bind /scratch:/scratch --bind /home:/home ~/apptainers/rose-v0.1.0.sif
 ```
 2. Note the hostname of the node you are running at:
 ```shell
@@ -81,3 +82,5 @@ $ ssh -L 11111:node-hostname:11111 username@cluster.aei.mpg.de
 ```
 5. In local ParaView, connect to remote ParaView server - `Connect` button.
 Then, specify `localhost:11111` as the address of the server.
+
+6. Enjoy loading files from the cluster using the plugins `EnergyFluxToVolume`, `WaveformDataReader`, and `WaveformToVolume`!
