@@ -40,7 +40,7 @@ for i, frame_time in enumerate(frame_times):
     print(f'[{args.task_id}] Rendering frame #{global_frame_id} ({i} out of local batch of size {len(frame_times)})')
     animation.AnimationTime = frame_time
     pv.Render()
-    filename = f'frame{global_frame_id:06d}.png'
+    filename = f'frame.{global_frame_id:06d}.png'
     filepath = os.path.join(args.output_dir, filename)
     pv.SaveScreenshot(filepath)
 
