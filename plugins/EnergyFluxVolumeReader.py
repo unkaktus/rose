@@ -268,9 +268,12 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         self.component_selection = vtkDataArraySelection()
         self.component_selection.AddArray(EnergyFluxLog10ArrayName)
         self.component_selection.AddArray(ESPLArrayName)
+        self.component_selection.DisableAllArrays()
         self.component_selection.AddObserver(
             "ModifiedEvent", create_modified_callback(self)
         )
+
+        self.component_selection.EnableArray(ESPLArrayName)
 
 
     @smproperty.stringvector(name="FileName")
