@@ -27,6 +27,8 @@ rose_cache_dir = os.environ.get("ROSE_CACHE_DIR", "")
 if rose_cache_dir == "":
     rose_cache_dir = tempfile.mkdtemp(prefix='rose-')
 
+EnergyFluxLog10ArrayName = "Energy flux (log10)"
+ESPLArrayName = "eSPL in dB"
 
 # Needed by ParaView
 def create_modified_callback(anobject):
@@ -46,6 +48,11 @@ def create_modified_callback(anobject):
 def smooth_step(x, center, width):
     return 1-special.erf((x-center)/width)
 
+
+def set_output_array(output, name, array):
+    quantity_vtk = vtknp.numpy_to_vtk(array, deep=True)
+    quantity_vtk.SetName(name)
+    output.GetPointData().AddArray(quantity_vtk)
 
 from astropy import units as u, constants as const
 
@@ -259,8 +266,8 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         )
 
         self.component_selection = vtkDataArraySelection()
-        self.component_selection.AddArray("Energy flux (log10)")
-        self.component_selection.AddArray("eSPL in dB")
+        self.component_selection.AddArray(EnergyFluxLog10ArrayName)
+        self.component_selection.AddArray(ESPLArrayName)
         self.component_selection.AddObserver(
             "ModifiedEvent", create_modified_callback(self)
         )
@@ -483,20 +490,17 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         np.maximum(energy_flux, self.value_threshold, out=energy_flux)
 
         # Take log here instead of in ParaView
-        energy_flux_log = np.log10(energy_flux)
+
 
         # Add entire sum to the output
-        if self.component_selection.ArrayIsEnabled("Energy flux (log10)"):
-            quantity_vtk = vtknp.numpy_to_vtk(energy_flux_log, deep=True)
-            quantity_vtk.SetName("Energy flux (log10)")
-            output.GetPointData().AddArray(quantity_vtk)
+        if self.component_selection.ArrayIsEnabled(EnergyFluxLog10ArrayName):
+            energy_flux_log = np.log10(energy_flux)
+            set_output_array(output, EnergyFluxLog10ArrayName, energy_flux_log)
 
         # Effective Sound Pressure Level in dB
-        espl = eSPL(energy_flux, distance=self.distance*u.Mpc)
+        if self.component_selection.ArrayIsEnabled(ESPLArrayName):
+            espl = eSPL(energy_flux, distance=self.distance*u.Mpc)
+            set_output_array(output, ESPLArrayName, espl)
 
-        if self.component_selection.ArrayIsEnabled("eSPL in dB"):
-            quantity_vtk = vtknp.numpy_to_vtk(espl, deep=True)
-            quantity_vtk.SetName("eSPL in dB")
-            output.GetPointData().AddArray(quantity_vtk)
 
         return 1
