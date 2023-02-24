@@ -12,10 +12,11 @@ RUN apt-get -yqq update \
       wget \
       mpich \
       libhdf5-dev \
+      texlive-latex-extra \
   && apt-get clean
 
 # Install ParaView
-RUN wget -O paraview.tar.gz "https://www.paraview.org/paraview-downloads/download.php?submit=Download&version=v5.10&type=binary&os=Linux&downloadFile=ParaView-5.10.1-osmesa-MPI-Linux-Python3.9-x86_64.tar.gz" \
+RUN wget -O paraview.tar.gz "https://www.paraview.org/paraview-downloads/download.php?submit=Download&version=v5.11&type=binary&os=Linux&downloadFile=ParaView-5.11.0-osmesa-MPI-Linux-Python3.9-x86_64.tar.gz" \
   && tar -xzf paraview.tar.gz \
   && rm paraview.tar.gz \
   && mv ParaView-* /opt/paraview

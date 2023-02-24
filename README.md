@@ -22,7 +22,7 @@ The name `rose` owes to the rose-like shapes of BBH gravitaional emission using 
 - Slurm job script `render/job.sh` to submit `render/render_state.py` for rendering frame ranges in parallel
 
 ### Requirements
-* ParaView 5.10.1 on your desktop
+* ParaView 5.11.0 on your desktop
 
 ### Running locally via Docker
 
