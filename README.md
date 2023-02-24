@@ -58,14 +58,14 @@ $ mkdir $HOME/apptainers
 3. There, download latest `rose` container file from GitHub:
 ```shell
 $ cd ~/apptainers
-$ wget https://github.com/unkaktus/rose/releases/download/v0.1.0/rose-v0.1.0.sif
+$ wget https://github.com/unkaktus/rose/releases/download/v1.0.0/rose-v1.0.0.sif
 ```
 
 ### Running on an HPC cluster
 
 1. Run the container on some node:
 ```shell
-$ srun -N1 -n1 --exclusive --pty apptainer shell --bind /scratch:/scratch --bind /home:/home ~/apptainers/rose-v0.1.0.sif
+$ srun -N1 -n1 --exclusive --pty apptainer shell --bind /scratch:/scratch --bind /home:/home ~/apptainers/rose-v1.0.0.sif
 ```
 2. Note the hostname of the node you are running at:
 ```shell
