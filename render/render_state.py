@@ -15,10 +15,10 @@ args = parser.parse_args()
 # disable automatic camera reset on 'Show'
 pv._DisableFirstRenderCameraReset()
 
-print(f'[{args.task_id}] Loading state...')
+print(f'[{args.task_id:04d}] Loading state...')
 # load state
 pv.LoadState(args.state)
-print(f'[{args.task_id}] Loaded state.')
+print(f'[{args.task_id:04d}] Loaded state.')
 
 # get animation scene
 animation = pv.GetAnimationScene()
@@ -37,7 +37,7 @@ frame_times = split_global_frame_times[args.task_id]
 # Set time
 for i, frame_time in enumerate(frame_times):
     global_frame_id = frame_number_offset + i
-    print(f'[{args.task_id}] Rendering frame #{global_frame_id} ({i} out of local batch of size {len(frame_times)})')
+    print(f'[{args.task_id:04d}] Rendering frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d})')
     animation.AnimationTime = frame_time
     pv.Render()
     filename = f'frame.{global_frame_id:06d}.png'
