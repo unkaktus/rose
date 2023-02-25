@@ -13,7 +13,9 @@ RUN apt-get -yqq update \
       mpich \
       libhdf5-dev \
       texlive-latex-extra \
-  && apt-get clean
+      cm-super \
+      dvipng \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install ParaView
 RUN wget -O paraview.tar.gz "https://www.paraview.org/paraview-downloads/download.php?submit=Download&version=v5.11&type=binary&os=Linux&downloadFile=ParaView-5.11.0-osmesa-MPI-Linux-Python3.9-x86_64.tar.gz" \
@@ -35,6 +37,7 @@ RUN --mount=type=cache,target=/root/.cache pip install \
     spherical \
     quaternionic \
     scri \
+    matplotlib \
     ;
 
 # Build scri Numba code by importing it.
