@@ -4,7 +4,7 @@
 
 It is based on plugins from [`gwpv`](https://github.com/nilsvu/gwpv) written by [Nils Vu](https://github.com/nilsvu).
 
-The name `rose` owes to the rose-like shapes of BBH gravitaional emission using `inferno` colormap.
+The name `rose` comes from the rose-like shapes of gravitaional emission of binary blackholes.
 
 ![The rose](rose.png)
 
