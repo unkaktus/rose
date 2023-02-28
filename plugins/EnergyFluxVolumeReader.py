@@ -44,11 +44,6 @@ def create_modified_callback(anobject):
 
     return _markmodified
 
-
-def smooth_step(x, center, width):
-    return 1-special.erf((x-center)/width)
-
-
 def set_output_array(output, name, array):
     quantity_vtk = vtknp.numpy_to_vtk(array, deep=True)
     quantity_vtk.SetName(name)
@@ -181,16 +176,18 @@ def deactivation(x, width, outer):
     return smoothstep((outer - x) / width)
 
 class GridAdjustParameters():
+    apply_deactivation: bool
     scale_with_distance: bool
 
 
 def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustParameters):
     spherical_grid = CartesianGrid(grid_params).spherical()
 
-    screen = deactivation(x = spherical_grid.r,
-                     width=60,
-                     outer=grid_params.size)
-    swsh_grid *= screen.reshape(screen.shape + (1,))
+    if params.apply_deactivation:
+        screen = deactivation(x = spherical_grid.r,
+                        width=60,
+                        outer=grid_params.size)
+        swsh_grid *= screen.reshape(screen.shape + (1,))
 
     if params.scale_with_distance:
         swsh_grid /= (spherical_grid.r**2 + 1.0e-30).reshape(spherical_grid.r.shape + (1,))
@@ -299,10 +296,10 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
     def GetModes(self):
         return self.modes_selection
 
-    @smproperty.intvector(name="SmoothClip", default_values=True)
+    @smproperty.intvector(name="ApplyDeactivation", default_values=True)
     @smdomain.xml('<BooleanDomain name="bool"/>')
-    def SetSmoothClip(self, value):
-        self.smooth_clip = value
+    def SetApplyDeactivation(self, value):
+        self.apply_deactivation = value
         self.Modified()
 
     @smproperty.dataarrayselection(name="Components")
@@ -445,6 +442,7 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
             raise Exception('SWSH grid is None')
 
         adjust_params = GridAdjustParameters()
+        adjust_params.apply_deactivation = self.apply_deactivation
         adjust_params.scale_with_distance = self.scale_with_distance
 
         swsh_grid, spherical_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
@@ -482,12 +480,6 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
 
 
         energy_flux = np.real(quantity)
-
-        # Spherical clip
-        mask = spherical_grid.r > grid_params.size*0.96
-
-        if self.smooth_clip:
-            energy_flux[mask] = 0.0
 
         # Clip from below
         np.maximum(energy_flux, self.value_threshold, out=energy_flux)
