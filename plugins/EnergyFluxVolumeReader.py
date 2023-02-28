@@ -13,10 +13,12 @@ from spherical_functions import LM_index
 import scri
 
 
-from vtkmodules.vtkCommonDataModel import vtkUniformGrid
+from vtkmodules.vtkCommonDataModel import vtkStructuredGrid
 from vtkmodules.vtkCommonCore import vtkDataArraySelection
 from vtkmodules.util.vtkAlgorithm import VTKPythonAlgorithmBase
 from vtkmodules.numpy_interface import dataset_adapter as dsa
+from vtkmodules.numpy_interface import algorithms as algs
+from paraview import vtk
 from paraview.vtk.util import numpy_support as vtknp
 from paraview.util.vtkAlgorithm import smdomain, smhint, smproperty, smproxy
 from paraview import util
@@ -78,40 +80,41 @@ def eSPL(energy_flux, distance):
 
 class SWSHParameters:
     size: float
-    num_points: float
+    Nr: int
+    NPhi: int
+    NTheta: int
     spin_weight: int
     ell_max: int
-
-class SphericalGrid:
-    r: np.ndarray
-    theta: np.ndarray
-    phi: np.ndarray
-
 
 class CartesianGrid:
     x: np.ndarray
     y: np.ndarray
     z: np.ndarray
 
+class SphericalGrid:
+    r: np.ndarray
+    theta: np.ndarray
+    phi: np.ndarray
+
     def __init__(self, p: SWSHParameters) -> None:
-        X = np.linspace(-p.size, p.size, p.num_points)
-        Y = X
-        Z = X
-        self.x, self.y, self.z = map(
+        R = np.linspace(0, p.size/2, p.Nr)
+        Phi = np.linspace(0, 2*np.pi, p.NPhi)
+        Theta = np.linspace(0, np.pi, p.NTheta)
+        self.r, self.phi, self.theta = map(
             lambda arr: arr.flatten(order="F"), np.meshgrid(
-                X, Y, Z, indexing="ij")
+                R, Phi, Theta, indexing="ij")
         )
 
-    def spherical(self) -> SphericalGrid:
-        spherical_grid = SphericalGrid()
-        spherical_grid.r = np.sqrt(self.x**2 + self.y**2 + self.z**2)
-        spherical_grid.theta = np.arccos(self.z / spherical_grid.r)
-        spherical_grid.phi = np.arctan2(self.y, self.x)
-        return spherical_grid
+    def cartesian(self) -> CartesianGrid:
+        grid = CartesianGrid()
+        grid.x = self.r*np.sin(self.theta)*np.cos(self.phi)
+        grid.y = self.r*np.sin(self.theta)*np.sin(self.phi)
+        grid.z = self.r*np.cos(self.theta)
+        return grid
 
 
 def swsh_grid_hash(p: SWSHParameters):
-    key = f'{p.size}|{p.num_points}|{p.spin_weight}|{p.ell_max}'.encode(
+    key = f'{p.size}|{p.Nr}|{p.NPhi}|{p.NTheta}|{p.spin_weight}|{p.ell_max}'.encode(
         'utf-8')
     return hashlib.sha256(key).hexdigest()[:16]
 
@@ -138,8 +141,7 @@ def load_swsh_grid(params: SWSHParameters, cache_dir: str):
 def create_swsh_grid(p: SWSHParameters):
     logger.info("Creating SWSH grid...")
 
-    cartesian_grid = CartesianGrid(p)
-    spherical_grid = cartesian_grid.spherical()
+    spherical_grid = SphericalGrid(p)
 
     angles = quaternionic.array.from_spherical_coordinates(
         spherical_grid.theta, spherical_grid.phi)
@@ -168,31 +170,6 @@ def load_or_create_swsh_grid(p: SWSHParameters, cache_dir: str):
         swsh_grid = create_swsh_grid(p)
         save_swsh_grid(swsh_grid, p, cache_dir)
     return swsh_grid
-
-def smoothstep(x):
-    return np.where(x < 0, 0, np.where(x <= 1, 3 * x**2 - 2 * x**3, 1))
-
-def deactivation(x, width, outer):
-    return smoothstep((outer - x) / width)
-
-class GridAdjustParameters():
-    apply_deactivation: bool
-    scale_with_distance: bool
-
-
-def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustParameters):
-    spherical_grid = CartesianGrid(grid_params).spherical()
-
-    if params.apply_deactivation:
-        screen = deactivation(x = spherical_grid.r,
-                        width=60,
-                        outer=grid_params.size)
-        swsh_grid *= screen.reshape(screen.shape + (1,))
-
-    if params.scale_with_distance:
-        swsh_grid /= (spherical_grid.r**2 + 1.0e-30).reshape(spherical_grid.r.shape + (1,))
-    return swsh_grid, spherical_grid
-
 
 
 def get_timestep(algorithm, logger=None):
@@ -243,7 +220,7 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
             self,
             nInputPorts=0,
             nOutputPorts=1,
-            outputType="vtkUniformGrid",
+            outputType="vtkStructuredGrid",
         )
 
         self._filename = None
@@ -296,12 +273,6 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
     def GetModes(self):
         return self.modes_selection
 
-    @smproperty.intvector(name="ApplyDeactivation", default_values=True)
-    @smdomain.xml('<BooleanDomain name="bool"/>')
-    def SetApplyDeactivation(self, value):
-        self.apply_deactivation = value
-        self.Modified()
-
     @smproperty.dataarrayselection(name="Components")
     def GetPolarizations(self):
         return self.component_selection
@@ -325,12 +296,6 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
     @smproperty.doublevector(name="TimeShift", default_values=0.0)
     def SetTimeShift(self, value):
         self.time_shift = value
-        self.Modified()
-
-    @smproperty.intvector(name="ScaleWithDistance", default_values=False)
-    @smdomain.xml('<BooleanDomain name="bool"/>')
-    def SetScaleWithDistance(self, value):
-        self.scale_with_distance = value
         self.Modified()
 
     @smproperty.doublevector(name="ValueThreshold", default_values=1e-16)
@@ -418,22 +383,23 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         set_timesteps(self, self._get_timesteps(), logger=logger)
 
 
-        output = dsa.WrapDataObject(vtkUniformGrid.GetData(outInfo))
+        output = dsa.WrapDataObject(vtkStructuredGrid.GetData(outInfo))
 
         t = get_timestep(self, logger=logger)
         N = self.num_points_per_dim
-        D = self.size
+        Ntheta = N
+        Nphi =  N
+        Nr = N
 
-        dx = 2.0 * D / N
-        N_y = N
-        N_z = N
-        output.SetDimensions(N, N_y, N_z)
-        output.SetOrigin(-D, -D, -D)
-        output.SetSpacing(dx, dx, dx)
+        D = self.size
+        Nx = Nr * Nphi * Ntheta
+        output.SetDimensions(Nx, Nx, Nx)
 
         grid_params = SWSHParameters()
         grid_params.size = D
-        grid_params.num_points = N
+        grid_params.Nr = Nr
+        grid_params.NPhi = Nphi
+        grid_params.NTheta = Ntheta
         grid_params.spin_weight = self.spin_weight
         grid_params.ell_max = self.ell_max
 
@@ -441,11 +407,14 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         if swsh_grid is None:
             raise Exception('SWSH grid is None')
 
-        adjust_params = GridAdjustParameters()
-        adjust_params.apply_deactivation = self.apply_deactivation
-        adjust_params.scale_with_distance = self.scale_with_distance
+        spherical_grid = SphericalGrid(grid_params)
+        cartesian_grid = spherical_grid.cartesian()
 
-        swsh_grid, spherical_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
+        coordinates = algs.make_vector(cartesian_grid.x, cartesian_grid.y, cartesian_grid.z)
+        points = vtk.vtkPoints()
+        points.SetData(dsa.numpyTovtkDataArray(coordinates, "Points"))
+        output.SetPoints(points)
+
 
         # Compute scaled waveform phase on the grid
         phase = (t + self.time_shift) - spherical_grid.r
@@ -483,9 +452,6 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
 
         # Clip from below
         np.maximum(energy_flux, self.value_threshold, out=energy_flux)
-
-        # Take log here instead of in ParaView
-
 
         # Add entire sum to the output
         if self.component_selection.ArrayIsEnabled(EnergyFluxLog10ArrayName):
