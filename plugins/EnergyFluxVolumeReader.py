@@ -177,6 +177,7 @@ def deactivation(x, width, outer):
 
 class GridAdjustParameters():
     apply_deactivation: bool
+    deactivation_width: float
     scale_with_distance: bool
 
 
@@ -185,7 +186,7 @@ def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustP
 
     if params.apply_deactivation:
         screen = deactivation(x = spherical_grid.r,
-                        width=60,
+                        width=params.deactivation_width,
                         outer=grid_params.size)
         swsh_grid *= screen.reshape(screen.shape + (1,))
 
@@ -246,6 +247,8 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
             outputType="vtkUniformGrid",
         )
 
+        self.swsh_cache_dir = os.path.join(rose_cache_dir, "swsh_cache")
+
         self._filename = None
         self._subfile = None
 
@@ -302,6 +305,12 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         self.apply_deactivation = value
         self.Modified()
 
+    @smproperty.intvector(name="DeactivationWidth", default_values=10)
+    def SetDeactivationWidth(self, value):
+        self.deactivation_width = value
+        self.Modified()
+
+
     @smproperty.dataarrayselection(name="Components")
     def GetPolarizations(self):
         return self.component_selection
@@ -341,11 +350,6 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
     @smproperty.doublevector(name="DistanceInMpc", default_values=300)
     def SetDistance(self, value):
         self.distance = value
-        self.Modified()
-
-    @smproperty.stringvector(name="SwshCacheDirectory", default_values=os.path.join(rose_cache_dir, "swsh_cache"))
-    def SetSwshCacheDirectory(self, value):
-        self.swsh_cache_dir = value
         self.Modified()
 
     def _get_timesteps(self):
@@ -443,6 +447,7 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
 
         adjust_params = GridAdjustParameters()
         adjust_params.apply_deactivation = self.apply_deactivation
+        adjust_params.deactivation_width = self.deactivation_width
         adjust_params.scale_with_distance = self.scale_with_distance
 
         swsh_grid, spherical_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
