@@ -12,6 +12,17 @@ parser.add_argument("--state", type=str, help="State filename")
 parser.add_argument("--output-dir", type=str, help="Path to output directory", default="")
 args = parser.parse_args()
 
+
+output_dir = os.path.splitext(args.state)[0]
+if output_dir != "":
+    output_dir = args.output_dir
+
+# Create output directory if it doesn't exist
+try:
+    os.mkdir(output_dir)
+except:
+    pass
+
 # disable automatic camera reset on 'Show'
 pv._DisableFirstRenderCameraReset()
 
