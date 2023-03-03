@@ -1,47 +1,26 @@
-# WaveformToVolume Paraview filter
-
 import spherical
 import quaternionic
 import numpy as np
 import os
 import hashlib
-import time
 import logging
-import sys
 import tempfile
+import h5py
 
-import rich.progress
 
 from vtkmodules.vtkCommonDataModel import vtkUniformGrid
 from vtkmodules.vtkCommonCore import vtkDataArraySelection
 from vtkmodules.util.vtkAlgorithm import VTKPythonAlgorithmBase
 from vtkmodules.numpy_interface import dataset_adapter as dsa
 from paraview.vtk.util import numpy_support as vtknp
-from paraview.util.vtkAlgorithm import smdomain, smproperty, smproxy
+from paraview.util.vtkAlgorithm import smdomain, smhint, smproperty, smproxy
 from paraview import util
 
 
 logger = logging.getLogger(__name__)
 rose_cache_dir = os.environ.get("ROSE_CACHE_DIR", "")
-if rose_cache_dir == "":
+if rose_cache_dir is None:
     rose_cache_dir = tempfile.mkdtemp(prefix='rose-')
-
-
-def new_progress():
-    progress = rich.progress.Progress(
-        rich.progress.TextColumn(
-            "[progress.description]{task.description}"
-        ),
-        rich.progress.SpinnerColumn(
-            spinner_name="simpleDots", finished_text="... done."
-        ),
-        rich.progress.TimeElapsedColumn(),
-    )
-    if progress is None:
-        logger.fatal("rich progress is None")
-        return
-    return progress
-
 
 class SWSHParameters:
     size: float = 0.0
@@ -81,12 +60,9 @@ class CartesianGrid:
         spherical_grid.phi = np.arctan2(self.y, self.x)
         return spherical_grid
 
-
 def swsh_grid_hash(p: SWSHParameters):
-    key = f'{p.size}|{p.num_points}|{p.spin_weight}|{p.ell_max}|{p.clip_y_normal}|{p.clip_z_normal}'.encode(
-        'utf-8')
+    key = f'{p.size}|{p.num_points}|{p.spin_weight}|{p.ell_max}|{p.clip_y_normal}|{p.clip_z_normal}'.encode('utf-8')
     return hashlib.sha256(key).hexdigest()[:16]
-
 
 def load_swsh_grid(params: SWSHParameters, cache_dir: str):
     if cache_dir == "":
@@ -106,22 +82,15 @@ def load_swsh_grid(params: SWSHParameters, cache_dir: str):
     swsh_grid = np.load(cache_filename)
     return swsh_grid
 
-
 def create_swsh_grid(p: SWSHParameters):
     logger.info("Creating SWSH grid...")
-    progress = new_progress()
-
-    task_id = progress.add_task("Computing SWSH grid", total=1)
-
     cartesian_grid = CartesianGrid(p)
     spherical_grid = cartesian_grid.spherical()
 
     angles = quaternionic.array.from_spherical_coordinates(
         spherical_grid.theta, spherical_grid.phi)
     swsh_grid = spherical.Wigner(p.ell_max).sYlm(s=p.spin_weight, R=angles)
-    progress.update(task_id, completed=1)
     return swsh_grid
-
 
 def save_swsh_grid(swsh_grid, p: SWSHParameters, cache_dir: str):
     if cache_dir == "":
@@ -137,13 +106,17 @@ def save_swsh_grid(swsh_grid, p: SWSHParameters, cache_dir: str):
         np.save(cache_filename, swsh_grid)
         logger.debug(f'SWSH grid cache saved to {cache_filename}.')
 
-
 def load_or_create_swsh_grid(p: SWSHParameters, cache_dir: str):
     swsh_grid = load_swsh_grid(p, cache_dir)
     if swsh_grid is None:
         swsh_grid = create_swsh_grid(p)
         save_swsh_grid(swsh_grid, p, cache_dir)
     return swsh_grid
+
+def set_output_array(output, name, array):
+    quantity_vtk = vtknp.numpy_to_vtk(array, deep=True)
+    quantity_vtk.SetName(name)
+    output.GetPointData().AddArray(quantity_vtk)
 
 
 def smoothstep(x):
@@ -162,7 +135,6 @@ class GridAdjustParameters():
     activation_offset: float
     activation_width: float
     deactivation_width: float
-    radial_scale: float
     one_over_r_scaling: bool
 
 
@@ -175,8 +147,6 @@ def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustP
                      width=params.deactivation_width,
                      outer=grid_params.size)
     swsh_grid *= screen.reshape(screen.shape + (1,))
-    # Apply radial scale
-    spherical_grid.r *= params.radial_scale
     if params.one_over_r_scaling:
         swsh_grid /= (spherical_grid.r + 1.0e-30).reshape(spherical_grid.r.shape + (1,))
     return swsh_grid, spherical_grid
@@ -196,18 +166,12 @@ def create_modified_callback(anobject):
 
     return _markmodified
 
-
-def get_timestep(algorithm, logger=None):
-    if logger is None:
-        logger = logging.getLogger(__name__)
-    logger.debug("Getting current timestep...")
+def get_timestep(algorithm):
     executive = algorithm.GetExecutive()
     outInfo = executive.GetOutputInformation(0)
     if not outInfo.Has(executive.UPDATE_TIME_STEP()):
-        logger.debug("No `UPDATE_TIME_STEP` found. Return 0.")
         return 0.0
     timestep = outInfo.Get(executive.UPDATE_TIME_STEP())
-    logger.debug(f"Found `UPDATE_TIME_STEP`: {timestep}")
     return timestep
 
 
@@ -228,48 +192,38 @@ def set_timesteps(algorithm, timesteps, logger=None):
         f"Set data timesteps to {outInfo.Get(executive.TIME_RANGE())}."
     )
 
-
 def get_mode_name(l, abs_m):
-    return "({}, {}) Mode".format(l, abs_m)
+    return f"({l}, {abs_m}) Mode"
 
 
-# Reproduces `spherical_functions.LM_index` so we don't need to import the
-# `spherical_functions` module when using a cached SWSH grid
 def LM_index(ell, m, ell_min):
     return ell * (ell + 1) - ell_min**2 + m
 
-
-@smproxy.filter(label="Waveform To Volume")
-@smproperty.input(name="WaveformData", port_index=0)
-@smdomain.datatype(dataTypes=["vtkTable"])
-class WaveformToVolume(VTKPythonAlgorithmBase):
+@smproxy.reader(
+    name="StrainVolumeReader",
+    label="Strain Volume Reader",
+    extensions="h5",
+    file_description="HDF5 files",
+)
+class StrainVolumeReader(VTKPythonAlgorithmBase):
     def __init__(self):
         VTKPythonAlgorithmBase.__init__(
             self,
-            nInputPorts=1,
+            nInputPorts=0,
             nOutputPorts=1,
-            # Choosing `vtkUniformGrid` for the output for the following reasons:
-            # - `vtkRectilinearGrid` doesn't support volume rendering
-            #   (in Paraview v5.7.0 at least)
-            # - The unstructured grids don't support the 'GPU Based'
-            #   volume rendering mode, which can do shading and looks nice
             outputType="vtkUniformGrid",
         )
+        self._filename = None
+        self._subfile = None
+        self.mode_names = []
         self.modes_selection = vtkDataArraySelection()
-        # TODO: We should really retrieve the available modes from the input
-        # info in `RequestInformation`, but the `WAVEFORM_MODES` keys is not
-        # propagating downstream for some reason...
-        # modes_arrays_key = WaveformDataReader.MODES_ARRAYS_KEY
-        # if waveform_data_info.Has(modes_arrays_key):
-        #     for i in range(waveform_data_info.Length(modes_arrays_key)):
-        #         self.modes_selection.AddArray(waveform_data_info.Get(
-        #             modes_arrays_key, i))
-        for l in range(2, 5 + 1):
-            for m in range(0, l + 1):
-                self.modes_selection.AddArray(get_mode_name(l, m))
-        self.modes_selection.AddObserver(
-            "ModifiedEvent", create_modified_callback(self)
-        )
+        self.strain_modes = {}
+        self.spin_weight = -2
+        self.ell_max = 2
+        self.swsh_cache_dir = os.path.join(rose_cache_dir, "swsh_cache")
+
+        self.update_mode_selection()
+
         self.polarizations_selection = vtkDataArraySelection()
         self.polarizations_selection.AddArray("Plus")
         self.polarizations_selection.AddArray("Cross")
@@ -277,34 +231,36 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
             "ModifiedEvent", create_modified_callback(self)
         )
 
-    def FillInputPortInformation(self, port, info):
-        # When using multiple inputs we (may) have to set their data types here
-        # info.Set(self.INPUT_REQUIRED_DATA_TYPE(),
-        #          'vtkTable' if port == 0 else 'vtkUniformGrid')
-        info.Set(self.INPUT_REQUIRED_DATA_TYPE(), "vtkTable")
+    def update_mode_selection(self):
+        for l in range(abs(self.spin_weight), self.ell_max + 1):
+            for m in range(0, l + 1):
+                self.modes_selection.AddArray(get_mode_name(l, m))
+        self.modes_selection.AddObserver(
+            "ModifiedEvent", create_modified_callback(self)
+        )
 
-    def _get_waveform_data(self):
-        return dsa.WrapDataObject(self.GetInputDataObject(0, 0))
+    @smproperty.stringvector(name="FileName")
+    @smdomain.filelist()
+    @smhint.filechooser(extensions="h5", file_description="HDF5 files")
+    def SetFileName(self, value):
+        self._filename = value
+        self.Modified()
+
+    @smproperty.stringvector(
+        name="Subfile", default_values=["Extrapolated_N2.dir"]
+    )
+    def SetSubfile(self, value):
+        self._subfile = value
+        self.Modified()
 
     @smproperty.dataarrayselection(name="Modes")
     def GetModes(self):
         return self.modes_selection
 
-    @smproperty.intvector(name="StoreIndividualModes", default_values=False)
-    def SetStoreIndividualModes(self, value):
-        self.store_individual_modes = value
-        self.Modified()
-
-    @smproperty.intvector(name="NormalizeEachMode", default_values=False)
-    def SetNormalizeEachMode(self, value):
-        self.normalize_each_mode = value
-        self.Modified()
-
     @smproperty.dataarrayselection(name="Polarizations")
     def GetPolarizations(self):
         return self.polarizations_selection
 
-    # Not needed when using SwshGrid input
     @smproperty.doublevector(name="Size", default_values=100)
     def SetSize(self, value):
         self.size = value
@@ -315,24 +271,10 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         self.num_points_per_dim = value
         self.Modified()
 
-    @smproperty.intvector(name="KeepEveryNthTimestep", default_values=1)
-    def SetKeepEveryNthTimestep(self, value):
-        self.keep_every_n_timestep = value
-        self.Modified()
-
     @smproperty.intvector(name="EllMax", default_values=2)
     def SetEllMax(self, value):
         self.ell_max = value
-        self.Modified()
-
-    @smproperty.intvector(name="SpinWeight", default_values=-2)
-    def SetSpinWeight(self, value):
-        self.spin_weight = value
-        self.Modified()
-
-    @smproperty.doublevector(name="RadialScale", default_values=10)
-    def SetRadialScale(self, value):
-        self.radial_scale = value
+        self.update_mode_selection()
         self.Modified()
 
     @smproperty.intvector(name="ClipYNormal", default_values=False)
@@ -353,12 +295,6 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         self.one_over_r_scaling = value
         self.Modified()
 
-    @smproperty.intvector(name="InvertRotationDirection", default_values=False)
-    @smdomain.xml('<BooleanDomain name="bool"/>')
-    def SetInvertRotationDirection(self, value):
-        self.invert_rotation_direction = value
-        self.Modified()
-
     @smproperty.doublevector(name="ActivationOffset", default_values=10)
     def SetActivationOffset(self, value):
         self.activation_offset = value
@@ -374,19 +310,9 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         self.deactivation_width = value
         self.Modified()
 
-    @smproperty.stringvector(name="SwshCacheDirectory", default_values=os.path.join(rose_cache_dir, "swsh_cache"))
-    def SetSwshCacheDirectory(self, value):
-        self.swsh_cache_dir = value
-        self.Modified()
-
     def _get_timesteps(self):
-        logger.debug("Getting time range from data...")
-        waveform_data = self._get_waveform_data()
-        if len(waveform_data.RowData.keys()) == 0:
-            return None
-        ts = waveform_data.RowData["Time"]
-        # XXX: why do we need linspace?
-        return np.linspace(ts[0], ts[-1], len(ts))
+        ts = np.linspace(self.time[0], self.time[-1], len(self.time))
+        return ts
 
     @smproperty.doublevector(
         name="TimestepValues",
@@ -399,43 +325,56 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
 
     def RequestInformation(self, request, inInfo, outInfo):
         logger.debug("Requesting information...")
-        waveform_data_info = inInfo[0].GetInformationObject(0)
-
         info = outInfo.GetInformationObject(0)
 
-        # For the `vtkUniformGrid` output we need to provide extents
-        # so that it gets rendered at all.
-        # When using the SwshGrid input we can retrieve them from the
-        # information object and pass them on.
-        # grid_extents = grid_info.Get(self.GetExecutive().WHOLE_EXTENT())
+        if self._filename is None or self._subfile is None:
+            return -1
+
+        with h5py.File(self._filename, "r") as f:
+            self.mode_names = list(
+                map(
+                    lambda dataset_name: dataset_name.replace(".dat", ""),
+                    filter(
+                        lambda dataset_name: dataset_name.startswith("Y_"),
+                        f[self._subfile].keys(),
+                    ),
+                )
+            )
+            if len(self.mode_names) == 0:
+                logger.warning(
+                    "No waveform mode datasets (prefixed 'Y_') found in file"
+                    f" '{self._filename}:{self._subfile}'."
+                )
+                return -1
+
+            strain = f[self._subfile]
+            # Take the time from (2,2) mode as the global time
+            self.time = strain["Y_l2_m2.dat"][:, 0]
+
+            for mode_name in self.mode_names:
+                mode_data_column = strain[mode_name + ".dat"]
+                self.strain_modes[mode_name] = np.array(
+                    mode_data_column[:, 1] + 1j * mode_data_column[:, 2]
+                    )
+
         N = self.num_points_per_dim
         N_y = N // 2 if self.clip_y_normal else N
         N_z = N // 2 if self.clip_z_normal else N
         grid_extents = [0, N - 1, 0, N_y - 1, 0, N_z - 1]
         util.SetOutputWholeExtent(self, grid_extents)
 
-        # This needs the time data from the waveform file, so we may have to
-        # set the `TIME_RANGE` and `TIME_STEPS` already in the
-        # WaveformDataReader.
         set_timesteps(self, self._get_timesteps(), logger=logger)
 
-        # logger.debug("Information object: {}".format(info))
         return 1
 
     def RequestData(self, request, inInfo, outInfo):
         logger.info("Requesting data...")
-        waveform_data = self._get_waveform_data()
-        # grid_data = self._get_grid_data()
         output = dsa.WrapDataObject(vtkUniformGrid.GetData(outInfo))
 
-        t = get_timestep(self, logger=logger)
+        t = get_timestep(self)
         N = self.num_points_per_dim
         D = self.size
 
-        # We may have to forward the grid data here when using SwshGrid input
-        # output.SetDimensions(*grid_data.GetDimensions())
-        # output.SetOrigin(*grid_data.GetOrigin())
-        # output.SetSpacing(*grid_data.GetSpacing())
         dx = 2.0 * D / N
         N_y = N // 2 if self.clip_y_normal else N
         N_z = N // 2 if self.clip_z_normal else N
@@ -455,10 +394,7 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
         if swsh_grid is None:
             raise Exception('SWSH grid is None')
 
-        # Apply activation, radial scale etc.
         adjust_params = GridAdjustParameters()
-
-        adjust_params.radial_scale = self.radial_scale
         adjust_params.activation_offset = self.activation_offset
         adjust_params.activation_width = self.activation_width
         adjust_params.deactivation_width = self.deactivation_width
@@ -466,19 +402,10 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
 
         swsh_grid, spherical_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
 
-        logger.info(f"Computing volume data at t={t}...")
-        start_time = time.time()
-
         # Compute scaled waveform phase on the grid
-        # r = vtknp.vtk_to_numpy(grid_data.GetPointData()['RadialCoordinate'])
-        phase = t - spherical_grid.r + self.activation_offset * self.radial_scale
+        phase = t - spherical_grid.r + self.activation_offset
 
-        # Invert rotation direction
-        rotation_direction = -1.0 if self.invert_rotation_direction else 1.0
-
-        # Compute strain in the volume from the input waveform data
-        skip_timesteps = self.keep_every_n_timestep
-        waveform_timesteps = waveform_data.RowData["Time"][::skip_timesteps]
+        # Compute strain in the volume
         strain = np.zeros(len(spherical_grid.r), dtype=np.complex)
 
         for i in range(self.modes_selection.GetNumberOfArrays()):
@@ -491,61 +418,23 @@ class WaveformToVolume(VTKPythonAlgorithmBase):
                     continue
                 for sign_m in (-1, 1):
                     m = abs_m * sign_m
-                    dataset_name = "Y_l{}_m{}".format(l, m)
                     mode_profile = swsh_grid[:, LM_index(l, m, 0)]
-                    # mode_profile = vtknp.vtk_to_numpy(grid_data.GetPointData()[dataset_name])
-                    waveform_mode_data = waveform_data.RowData[dataset_name][
-                        ::skip_timesteps
-                    ]
-                    if isinstance(waveform_mode_data, dsa.VTKNoneArray):
-                        logger.warning(
-                            f"Dataset '{dataset_name}' for mode {(l, m)} not"
-                            " available in waveform data, skipping."
-                        )
-                        continue
-                    # TODO: Make sure inverting the rotation direction like this
-                    # is correct.
-                    waveform_mode_data = (
-                        waveform_mode_data[:, 0]
-                        + rotation_direction * 1j * waveform_mode_data[:, 1]
-                    )
-                    if self.normalize_each_mode:
-                        waveform_mode_data /= np.max(
-                            np.abs(waveform_mode_data))
+                    mode_data = self.strain_modes[f"Y_l{l}_m{m}"]
+
                     mode_data = np.interp(
                         phase,
-                        waveform_timesteps,
-                        waveform_mode_data,
+                        self.time,
+                        mode_data,
                         left=0.0,
                         right=0.0,
                     )
                     strain_mode += mode_data * mode_profile
                 strain += strain_mode
-                # Expose individual modes in output
-                if self.store_individual_modes:
-                    if self.polarizations_selection.ArrayIsEnabled("Plus"):
-                        strain_mode_real_vtk = vtknp.numpy_to_vtk(
-                            np.real(strain_mode), deep=True
-                        )
-                        strain_mode_real_vtk.SetName(mode_name + " Plus")
-                        output.GetPointData().AddArray(strain_mode_real_vtk)
-                    if self.polarizations_selection.ArrayIsEnabled("Cross"):
-                        strain_mode_imag_vtk = vtknp.numpy_to_vtk(
-                            np.imag(strain_mode), deep=True
-                        )
-                        strain_mode_imag_vtk.SetName(mode_name + " Cross")
-                        output.GetPointData().AddArray(strain_mode_imag_vtk)
 
         if self.polarizations_selection.ArrayIsEnabled("Plus"):
-            strain_real_vtk = vtknp.numpy_to_vtk(np.real(strain), deep=True)
-            strain_real_vtk.SetName("Plus strain")
-            output.GetPointData().AddArray(strain_real_vtk)
+            set_output_array(output, "Plus strain", np.real(strain))
 
         if self.polarizations_selection.ArrayIsEnabled("Cross"):
-            strain_imag_vtk = vtknp.numpy_to_vtk(np.imag(strain), deep=True)
-            strain_imag_vtk.SetName("Cross strain")
-            output.GetPointData().AddArray(strain_imag_vtk)
+            set_output_array(output, "Cross strain", np.imag(strain))
 
-        logger.info(
-            f"Volume data computed in {time.time() - start_time:.3f}s.")
         return 1
