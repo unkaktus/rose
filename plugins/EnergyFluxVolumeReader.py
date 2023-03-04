@@ -24,7 +24,7 @@ from paraview import util
 
 logger = logging.getLogger(__name__)
 rose_cache_dir = os.environ.get("ROSE_CACHE_DIR", "")
-if rose_cache_dir == "":
+if rose_cache_dir is None:
     rose_cache_dir = tempfile.mkdtemp(prefix='rose-')
 
 EnergyFluxLog10ArrayName = "Energy flux (log10)"
