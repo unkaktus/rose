@@ -115,6 +115,9 @@ def swsh_grid_hash(p: SWSHParameters):
         'utf-8')
     return hashlib.sha256(key).hexdigest()[:16]
 
+def energy_flux_hash(waveform_filename):
+    key = f'energy_flux|{waveform_filename}'.encode('utf-8')
+    return hashlib.sha256(key).hexdigest()[:16]
 
 def load_swsh_grid(params: SWSHParameters, cache_dir: str):
     if cache_dir == "":
@@ -248,6 +251,7 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         )
 
         self.swsh_cache_dir = os.path.join(rose_cache_dir, "swsh_cache")
+        self.energy_flux_cache_dir = os.path.join(rose_cache_dir, "energy_flux_cache")
 
         self._filename = None
         self._subfile = None
@@ -405,13 +409,18 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
 
         # Cache calculated energy flux
         energy_flux = np.array([])
-        energy_flux_filename = f'{self._filename}.energy_flux.npy'
+        energy_flux_filename = os.path.join(
+            self.energy_flux_cache_dir,
+            f'{energy_flux_hash(self._filename)}.npy'
+            )
 
         try:
             energy_flux = np.load(energy_flux_filename)
         except:
             # Calculate the energy flux modes coefficients
             energy_flux = np.array(abd.sigma.dot * abd.sigma.dot.bar)
+            if not os.path.exists(self.energy_flux_cache_dir):
+                os.makedirs(self.energy_flux_cache_dir)
             np.save(energy_flux_filename, energy_flux)
 
         self.energy_flux = energy_flux
