@@ -9,12 +9,12 @@ parser = argparse.ArgumentParser('rose')
 parser.add_argument("--total-task-number", type=int, help="Total number of tasks")
 parser.add_argument("--task-id", type=int, help="Current task ID")
 parser.add_argument("--state", type=str, help="State filename")
-parser.add_argument("--output-dir", type=str, help="Path to output directory", default="")
+parser.add_argument("--output-dir", type=str, help="Path to output directory", default=None)
 args = parser.parse_args()
 
 
 output_dir = os.path.splitext(args.state)[0]
-if output_dir != "":
+if args.output_dir is not None:
     output_dir = args.output_dir
 
 # Create output directory if it doesn't exist
@@ -52,7 +52,7 @@ for i, frame_time in enumerate(frame_times):
     animation.AnimationTime = frame_time
     pv.Render()
     filename = f'frame.{global_frame_id:06d}.png'
-    filepath = os.path.join(args.output_dir, filename)
+    filepath = os.path.join(output_dir, filename)
     pv.SaveScreenshot(filepath)
 
 print(f'[{args.task_id}] Done')
