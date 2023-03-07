@@ -30,7 +30,7 @@ The name `rose` comes from the rose-like shapes of gravitaional emission of bina
 
 1. Run the Docker container, mounting your home folder as `/home` and grids cache directory `~/.cache` inside the container.
 ```shell
-$ docker run --rm -ti -v "$HOME:/home" -v "$HOME/.cache:/cache" -e ROSE_CACHE_DIR="/cache" -p 12321:11111 unkaktus/rose
+$ docker run --rm -ti -v "$HOME:/home" -v "$HOME/.cache:/cache" -e ROSE_CACHE_DIR="/cache" -p 12321:11111 unkaktus/rose:v2.0.0
 $ pvserver
 ```
 
@@ -58,14 +58,14 @@ $ mkdir $HOME/apptainers
 3. There, download latest `rose` container file from GitHub:
 ```shell
 $ cd ~/apptainers
-$ wget https://github.com/unkaktus/rose/releases/download/v1.1.0/rose-v1.1.0.sif
+$ wget https://github.com/unkaktus/rose/releases/download/v2.0.0/rose-v2.0.0.sif
 ```
 
 ### Running on an HPC cluster
 
 1. Run the container on some node:
 ```shell
-$ srun -N1 -n1 --exclusive --pty apptainer shell --bind /scratch:/scratch --bind /home:/home ~/apptainers/rose-v1.1.0.sif
+$ srun -N1 -n1 --exclusive --pty apptainer shell --bind /scratch:/scratch --bind /home:/home ~/apptainers/rose-v2.0.0.sif
 ```
 2. Note the hostname of the node you are running at:
 ```shell
