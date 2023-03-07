@@ -1,0 +1,29 @@
+Name = "rose"
+Type = "simple"
+
+Walltime = "4h"
+
+Nodes = 2
+TasksPerNode = 2
+
+Email = "batch@example.com"
+
+InitScript = [
+    "source /home/SPACK2023/share/spack/setup-env.sh",
+    "module load apptainer-1.0.3-gcc-12.2.0-aojy6ca"
+    ]
+
+Runtime = [
+    "apptainer",
+    "exec",
+    "--bind /work:/work",
+    "--bind /scratch:/scratch",
+    "--env ROSE_CACHE_DIR=/scratch/user/rose-cache"
+    ]
+Executable = "/home/user/apptainers/rose-v1.1.0.sif"
+Arguments = [
+    "render_state.py",
+    "--state={{.ConfigFilename}}",
+    "--total-task-number={{.TotalTaskNumber}}",
+    "--task-id={{.TaskID}}"
+    ]

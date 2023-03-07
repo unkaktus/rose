@@ -1,17 +1,17 @@
 #!/usr/bin/env -S python -u
 
-import paraview.simple as pv
-import numpy as np
 import argparse
-import os
 
-parser = argparse.ArgumentParser('rose')
+parser = argparse.ArgumentParser('render_state.py')
 parser.add_argument("--total-task-number", type=int, help="Total number of tasks")
 parser.add_argument("--task-id", type=int, help="Current task ID")
 parser.add_argument("--state", type=str, help="State filename")
 parser.add_argument("--output-dir", type=str, help="Path to output directory", default=None)
 args = parser.parse_args()
 
+import paraview.simple as pv
+import numpy as np
+import os
 
 output_dir = os.path.splitext(args.state)[0]
 if args.output_dir is not None:

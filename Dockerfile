@@ -47,4 +47,4 @@ RUN python3 -c 'import scri'
 WORKDIR /opt/rose
 COPY . .
 ENV PV_PLUGIN_PATH=/opt/rose/plugins
-ENTRYPOINT ["/bin/bash"]
+ENV PATH=${PATH}":/opt/rose/render"
