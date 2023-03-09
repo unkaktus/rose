@@ -3,8 +3,8 @@
 import argparse
 
 parser = argparse.ArgumentParser('render_state.py')
-parser.add_argument("--total-task-number", type=int, help="Total number of tasks")
-parser.add_argument("--task-id", type=int, help="Current task ID")
+parser.add_argument("--total-task-number", type=int, help="Total number of tasks", default=1)
+parser.add_argument("--task-id", type=int, help="Current task ID", default=0)
 parser.add_argument("--state", type=str, help="State filename")
 parser.add_argument("--output-dir", type=str, help="Path to output directory", default=None)
 args = parser.parse_args()
