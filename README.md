@@ -86,3 +86,58 @@ ssh -L 11111:node-hostname:11111 username@cluster
 Then, specify `localhost:11111` as the address of the server.
 
 6. Enjoy loading files from the cluster using `EnergyFluxVolumeReader`, `StrainVolumeReader`, and `TrajectoryTailReader`!
+
+### Running parallel state rendering on an HPC cluster
+
+0. Make sure you installed `spanner` (see above).
+
+1. Copy `render/begin.toml` into the directory with your state file (`.pvsm`).
+
+2. Adjust the number of nodes, path to `rose.sif` container, and other parameters in `begin.toml`.
+
+3. Begin the rendering job on your state using `spanner`:
+```shell
+spanner begin state.pvsm
+```
+4. You can track the process using `spanner`, e.g.:
+```shell
+spanner logs -f rose_state
+```
+
+5. The job will create a directory with the same name as the state file, and output the frames there.
+
+6. You can create a video from these frames by running `make_movie.sh` in the frame directory:
+```shell
+apptainer exec --bind /scratch:/scratch --bind /work:/work ~/apptainers/rose-v2.0.0.sif make_movie.sh
+```
+
+This will create a video file with the name of the current directory.
+
+### Running parallel frame postprocessing on an HPC cluster
+
+0. Make sure you installed `spanner` (see above).
+
+1. Copy `render/begin-overplot.toml` into the directory with your state file (`.pvsm`).
+
+2. Adjust the number of nodes, path to `rose.sif` container, and other parameters in `begin-overplot.toml`.
+
+3. Begin the rendering job on your state using `spanner`:
+```shell
+spanner begin -f begin-overplot.toml state.pvsm
+```
+4. You can track the process using `spanner`, e.g.:
+```shell
+spanner logs -f rose-overplot_state
+```
+
+5. The job will plot legends and a colorbar on top of the frames in the frame directory, and save
+postprocessed frames with `frame-overplotted` prefix.
+
+6. You can create a video from these frames by running `make_movie.sh` in the frame directory using the correct frame name prefix:
+```shell
+apptainer exec --bind /scratch:/scratch --bind /work:/work ~/apptainers/rose-v2.0.0.sif make_movie.sh frame-overplotted
+```
+
+It will create a video file with the name of the current directory with the frame prefix included.
+
+This is your final movie, enjoy! 💫
