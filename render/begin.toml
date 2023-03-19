@@ -20,7 +20,7 @@ Runtime = [
     "--bind /scratch:/scratch",
     "--env ROSE_CACHE_DIR=/scratch/user/rose-cache"
     ]
-Executable = "/home/user/apptainers/rose-v1.1.0.sif"
+Executable = "/home/user/apptainers/rose-v2.0.0.sif"
 Arguments = [
     "render_state.py",
     "--state={{.ConfigFilename}}",
