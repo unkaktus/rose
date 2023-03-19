@@ -13,6 +13,10 @@ from vtkmodules.vtkCommonDataModel import vtkPolyData
 
 logger = logging.getLogger(__name__)
 
+def set_output_array(output, name, array):
+    quantity_vtk = vtknp.numpy_to_vtk(array, deep=True)
+    quantity_vtk.SetName(name)
+    output.GetPointData().AddArray(quantity_vtk)
 
 def get_timestep(algorithm):
     logger.debug("Getting current timestep...")
@@ -89,6 +93,15 @@ class TrajectoryTailReader(VTKPythonAlgorithmBase):
         self._radial_scale = value
         self.Modified()
 
+    @smproperty.doublevector(name="MinimumAge", default_values=0.0)
+    def SetMinimumAge(self, value):
+        self.minimum_age = value
+        self.Modified()
+
+    @smproperty.doublevector(name="MaximumAge", default_values=800.0)
+    def SetMaximumAge(self, value):
+        self.maximum_age = value
+        self.Modified()
 
     def RequestInformation(self, request, inInfo, outInfo):
         logger.debug("Requesting information...")
@@ -102,15 +115,19 @@ class TrajectoryTailReader(VTKPythonAlgorithmBase):
 
         self.time = coords[:,0]
         self.coords = coords[:,1:]
-        # This needs the time data from the trajectory file, so we may have to
-        # set the `TIME_RANGE` and `TIME_STEPS` already in the
-        # TrajectoryDataReader.
+
         set_timesteps(self, self._get_timesteps())
+        trajectory_file.close()
         return 1
 
 
     def RequestData(self, request, inInfo, outInfo):
         output = dsa.WrapDataObject(vtkPolyData.GetData(outInfo))
+
+        current_time = get_timestep(self)
+        age = current_time - self.time
+        # Filter the point data
+        mask = np.logical_and(self.minimum_age < age, age < self.maximum_age)
 
         # Construct a line of points
         points_vtk = vtk.vtkPoints()
@@ -118,8 +135,8 @@ class TrajectoryTailReader(VTKPythonAlgorithmBase):
         # the index in the `vtkPoints` constructed above
         line_vtk = vtk.vtkPolyLine()
         point_ids = line_vtk.GetPointIds()
-        point_ids.SetNumberOfIds(len(self.coords))
-        for i, point in enumerate(self.coords):
+        point_ids.SetNumberOfIds(len(self.coords[mask]))
+        for i, point in enumerate(self.coords[mask]):
             points_vtk.InsertPoint(i, *point)
             point_ids.SetId(i, i)
         output.SetPoints(points_vtk)
@@ -127,18 +144,8 @@ class TrajectoryTailReader(VTKPythonAlgorithmBase):
         output.Allocate(1, 1)
         output.InsertNextCell(line_vtk.GetCellType(), line_vtk.GetPointIds())
 
-        # Add time data to the points
-        time_vtk = vtknp.numpy_to_vtk(self.time)
-        time_vtk.SetName("Time")
-        output.GetPointData().AddArray(time_vtk)
-        
-        # Retrieve current time
-        current_time = get_timestep(self)
-     
-        # Add age data to the points
-        age = current_time - self.time
-        age_vtk = vtknp.numpy_to_vtk(age, deep=True)
-        age_vtk.SetName("Age")
-        output.GetPointData().AddArray(age_vtk)
+        # Add data to the output
+        set_output_array(output, name="Time", array=self.time[mask])
+        set_output_array(output, name="Age", array=age[mask])
 
         return 1
