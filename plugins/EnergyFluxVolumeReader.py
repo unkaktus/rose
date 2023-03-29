@@ -418,7 +418,7 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
             energy_flux = np.load(energy_flux_filename)
         except:
             # Calculate the energy flux modes coefficients
-            energy_flux = np.array(abd.sigma.dot * abd.sigma.dot.bar)
+            energy_flux = (1/(4*np.pi)) * np.array(abd.sigma.dot * abd.sigma.dot.bar)
             if not os.path.exists(self.energy_flux_cache_dir):
                 os.makedirs(self.energy_flux_cache_dir)
             np.save(energy_flux_filename, energy_flux)
