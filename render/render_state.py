@@ -7,6 +7,8 @@ parser.add_argument("--total-task-number", type=int, help="Total number of tasks
 parser.add_argument("--task-id", type=int, help="Current task ID", default=0)
 parser.add_argument("--state", type=str, help="State filename")
 parser.add_argument("--output-dir", type=str, help="Path to output directory", default=None)
+parser.add_argument("--frame-spacing", type=float, help="Frame spacing in total masses", default=10)
+
 args = parser.parse_args()
 
 import paraview.simple as pv
@@ -36,7 +38,12 @@ animation = pv.GetAnimationScene()
 
 
 # Calculate timestamps
-global_frame_times = np.linspace(animation.StartTime, animation.EndTime, animation.NumberOfFrames)
+global_frame_times = np.arange(
+    start = animation.StartTime,
+    stop = animation.EndTime,
+    step = args.frame_spacing,
+    )
+animation.NumberOfFrames = len(global_frame_times)
 split_global_frame_times = np.array_split(global_frame_times, args.total_task_number)
 
 frame_number_offset = 0
