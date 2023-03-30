@@ -13,7 +13,6 @@ parser.add_argument("--frame-spacing", type=float, help="Frame spacing in total 
 parser.add_argument("--m1", type=float, help="Mass of the primary component", default=None)
 parser.add_argument("--m2", type=float, help="Mass of the secondary component", default=None)
 
-parser.add_argument("--domain-size", type=float, help="Merger time", default=None)
 # TODO: Can be taken on from the waveform
 parser.add_argument("--merger-time", type=float, help="Merger time", default=None)
 
@@ -90,14 +89,10 @@ if args.m2 is None:
     raise "Secondary mass is not specified"
 if args.merger_time is None:
     raise "Merger time is not specified"
-if args.domain_size is None:
-    raise "Domain size is not specified"
 
 total_mass = args.m1 + args.m2
 
 gu = GU(total_mass)
-
-r_domain = roundup(args.domain_size * gu.T.to("ms").value, to=5.0)
 
 espl_limits = (20, 110)
 
@@ -152,12 +147,6 @@ for i, frame_time in enumerate(frame_times):
     # Masses
     ax.annotate(f"$\mathsf{{M = {args.m1:.0f}\ M_{{\odot}} + {args.m2:.0f}\ M_{{\odot}}}}$",
         xy=(0.02, 0.98), xycoords='axes fraction', fontsize=14,
-        xytext=(5, -10), textcoords='offset points',
-        color = 'white'
-    )
-    # Domain size
-    ax.annotate(f'$\mathsf{{R_{{domain}} = {r_domain:.0f}\ ms}}$',
-        xy=(0.02, 0.95), xycoords='axes fraction', fontsize=14,
         xytext=(5, -10), textcoords='offset points',
         color = 'white'
     )
