@@ -17,7 +17,7 @@ parser.add_argument("--domain-size", type=float, help="Merger time", default=Non
 # TODO: Can be taken on from the waveform
 parser.add_argument("--merger-time", type=float, help="Merger time", default=None)
 
-
+parser.add_argument("--astro-units-flux", type=bool, help="Use astrophysical units for flux (L_sun/sr)", default=False)
 
 args = parser.parse_args()
 
@@ -66,6 +66,12 @@ def time_text(time, mass, merger) -> str:
 def roundup(x, to):
     return int(math.ceil(x / to)) * to
 
+def flux_astro(espl):
+    I_0 = 1e-12*u.W/u.m**2
+    D = 300 * u.Mpc
+    flux = np.power(10, espl/10) * I_0 * D**2
+    return flux.to("Lsun cm2 cm-2").value
+
 directory = os.path.splitext(args.state)[0]
 output_dir = directory
 if args.output_dir is not None:
@@ -92,6 +98,8 @@ total_mass = args.m1 + args.m2
 gu = GU(total_mass)
 
 r_domain = roundup(args.domain_size * gu.T.to("ms").value, to=5.0)
+
+espl_limits = (20, 110)
 
 first_frame = plt.imread(f'{directory}/frame.{0:06d}.png')
 print(first_frame.shape)
@@ -154,35 +162,65 @@ for i, frame_time in enumerate(frame_times):
         color = 'white'
     )
 
-
-    norm = mpl.colors.Normalize(vmin=20, vmax=110)
-    mappable = mpl.cm.ScalarMappable(norm=norm, cmap='viridis')
-    cbaxes = ax.inset_axes(bounds=[0.94, 0.035, 0.01, 0.4])
-    cb = fig.colorbar(mappable, cax=cbaxes, orientation='vertical')
-    cbaxes.yaxis.label.set_color('black')
-    cbaxes.tick_params(axis='y', colors='white', labelsize=12)
-    cbaxes.yaxis.set_major_formatter(FuncFormatter(
-        lambda x, pos: f'$\mathsf{{{x:.0f}}}$'
-        ))
-    for spine in cbaxes.spines:
-        cbaxes.spines[spine].set_color('#3e3e3e')
-    ax.annotate("$\mathsf{eSPL\ [dB]}$",
-        xy=(0.915, 0.47), xycoords='axes fraction', fontsize=14,
-        xytext=(5, 10), textcoords='offset points',
-        color = 'white'
-    )
-    ax.annotate("$\mathsf{D_L=300\ Mpc}$",
-        xy=(0.915, 0.44), xycoords='axes fraction', fontsize=9,
-        xytext=(5, 10), textcoords='offset points',
-        color = 'white'
-    )
-    
+    # Left bottom corner
+    # Time
     ax.annotate(time_text(frame_time, mass=total_mass, merger=args.merger_time),
         xy=(0.02, 0.02), xycoords='axes fraction', fontsize=14,
         xytext=(5, 10), textcoords='offset points',
         color = 'white'
     )
 
+    if args.astro_units_flux is False:
+        # Plot eSPL
+        norm = mpl.colors.Normalize(vmin=espl_limits[0], vmax=espl_limits[1])
+        mappable = mpl.cm.ScalarMappable(norm=norm, cmap='viridis')
+        cbaxes = ax.inset_axes(bounds=[0.94, 0.035, 0.01, 0.4])
+        cb = fig.colorbar(mappable, cax=cbaxes, orientation='vertical')
+        cbaxes.yaxis.label.set_color('black')
+        cbaxes.tick_params(axis='y', colors='white', labelsize=12)
+        cbaxes.yaxis.set_major_formatter(FuncFormatter(
+            lambda x, pos: f'$\mathsf{{{x:.0f}}}$'
+            ))
+        for spine in cbaxes.spines:
+            cbaxes.spines[spine].set_color('#3e3e3e')
+        ax.annotate("$\mathsf{eSPL\ [dB]}$",
+            xy=(0.915, 0.47), xycoords='axes fraction', fontsize=14,
+            xytext=(5, 10), textcoords='offset points',
+            color = 'white'
+        )
+        ax.annotate("$\mathsf{D_L=300\ Mpc}$",
+            xy=(0.915, 0.44), xycoords='axes fraction', fontsize=9,
+            xytext=(5, 10), textcoords='offset points',
+            color = 'white'
+        )
+    else:
+        # Plot L_sun/sr
+        flux_astro_log_limits = (
+            np.log10(flux_astro(espl_limits[0])),
+            np.log10(flux_astro(espl_limits[1])),
+        )
+        norm = mpl.colors.Normalize(vmin=flux_astro_log_limits[0], vmax=flux_astro_log_limits[1])
+        mappable = mpl.cm.ScalarMappable(norm=norm, cmap='viridis')
+        cbaxes = ax.inset_axes(bounds=[0.94, 0.035, 0.01, 0.4])
+        cb = fig.colorbar(mappable, cax=cbaxes, orientation='vertical',
+                          ticks=np.arange(np.ceil(flux_astro_log_limits[0]), np.ceil(flux_astro_log_limits[1]), 1),
+                          )
+        cbaxes.yaxis.label.set_color('black')
+        cbaxes.tick_params(axis='y', colors='white', labelsize=12)
+        cbaxes.yaxis.set_major_formatter(FuncFormatter(
+            lambda x, pos: f'$\mathsf{{ 10^{{ {x:.0f} }} }}$'
+            ))
+        for spine in cbaxes.spines:
+            cbaxes.spines[spine].set_color('#3e3e3e')
+        ax.annotate("$\mathsf{F\ [L_{\odot}\ sr^{-1}]}$",
+            xy=(0.905, 0.44), xycoords='axes fraction', fontsize=14,
+            xytext=(5, 10), textcoords='offset points',
+            color = 'white'
+        )
 
-    fig.savefig(f'{directory}/frame-overplotted.{global_frame_id:06d}.png', pad_inches=0, bbox_inches='tight')
+    output_filename = f'{directory}/frame-overplotted.{global_frame_id:06d}.png'
+    if args.astro_units_flux is True:
+        output_filename = f'{directory}/frame-overplotted-astro_units_flux.{global_frame_id:06d}.png'
+
+    fig.savefig(output_filename, pad_inches=0, bbox_inches='tight')
     plt.close(fig)

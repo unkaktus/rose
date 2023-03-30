@@ -71,8 +71,9 @@ class GU():
 
 def eSPL(energy_flux, distance):
     gu = GU(1)
+    I_0 = 1e-12*u.W/u.m**2
     intensity = energy_flux * gu.Luminosity / (distance**2)
-    SPL = 10 * np.log10(intensity/(1e-12*u.W/u.m**2))
+    SPL = 10 * np.log10(intensity/I_0)
     return SPL
 
 
