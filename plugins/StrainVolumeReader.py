@@ -375,7 +375,7 @@ class StrainVolumeReader(VTKPythonAlgorithmBase):
         N = self.num_points_per_dim
         D = self.size
 
-        dx = 2.0 * D / N
+        dx = 2.0 * D / (N-1)
         N_y = N // 2 if self.clip_y_normal else N
         N_z = N // 2 if self.clip_z_normal else N
         output.SetDimensions(N, N_y, N_z)

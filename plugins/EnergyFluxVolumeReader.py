@@ -438,7 +438,7 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         N = self.num_points_per_dim
         D = self.size
 
-        dx = 2.0 * D / N
+        dx = 2.0 * D / (N-1)
         N_y = N
         N_z = N
         output.SetDimensions(N, N_y, N_z)
