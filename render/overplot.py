@@ -311,10 +311,12 @@ for i, frame_time in enumerate(frame_times):
     mask = strain.t < frame_time
     waveform_ax.plot(strain.t[mask], h_cross[mask], color=berlin['S2'], label=r'$\mathsf{h_{\times}}$')
     waveform_ax.plot(strain.t[mask], h_plus[mask], color=berlin['S8'], label=r'$\mathsf{h_{+}}$')
-    waveform_ax.axvline(x=frame_time, color="white")
+    h_max = np.max(np.abs(h))
+    waveform_ax.axvline(x=frame_time,
+                        ymax = (1.2*h_max + np.maximum(h_cross[mask][-1], h_plus[mask][-1]))/(2.4*h_max),
+                        color="white")
     waveform_ax.axis('off')
     waveform_ax.set_xlim(start_time,strain.t[-1])
-    h_max = np.max(np.abs(h))
     waveform_ax.set_ylim(-1.2*h_max, 1.2*h_max)
     waveform_ax.legend(fontsize=14, loc='upper left', ncol=3, frameon=False, labelspacing=0, handletextpad=0.4, borderpad=0.2, borderaxespad=1.5)
 
