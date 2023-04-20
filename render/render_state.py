@@ -33,6 +33,7 @@ print(f'[{args.task_id:04d}] Loading state...')
 pv.LoadState(args.state)
 print(f'[{args.task_id:04d}] Loaded state.')
 
+
 # get animation scene
 animation = pv.GetAnimationScene()
 
@@ -60,6 +61,6 @@ for i, frame_time in enumerate(frame_times):
     pv.Render()
     filename = f'frame.{global_frame_id:06d}.png'
     filepath = os.path.join(output_dir, filename)
-    pv.SaveScreenshot(filepath)
+    pv.SaveScreenshot(filepath, TransparentBackground=1)
 
 print(f'[{args.task_id}] Done')
