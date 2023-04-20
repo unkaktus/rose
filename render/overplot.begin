@@ -3,14 +3,14 @@ Type = "simple"
 
 Walltime = "8h"
 
-Nodes = 16
-TasksPerNode = 14
+Nodes = 1
+TasksPerNode = 16
 
-Email = "begin@example.com"
+Email = "email@example.com"
 
 InitScript = [
     "source /home/SPACK2023/share/spack/setup-env.sh",
-    "module load apptainer-1.0.3-gcc-12.2.0-aojy6ca"
+    "module load apptainer-1.0.3-gcc-12.2.0-aojy6ca",
     ]
 
 Runtime = [
@@ -22,12 +22,9 @@ Runtime = [
     ]
 Executable = "/home/user/apptainers/rose-v2.0.0.sif"
 Arguments = [
-    "/home/user/rose/postprocessing/overplot.py",
-    "--m1=30",
-    "--m2=15",
-    "--merger-time=7798",
-    "--domain-size=400",
+    "/home/user/rose/render/overplot.py",
     "--state={{.ConfigFilename}}",
     "--total-task-number={{.TotalTaskNumber}}",
-    "--task-id={{.TaskID}}"
+    "--task-id={{.TaskID}}",
+    "--astro-units-flux=True",
   ]
