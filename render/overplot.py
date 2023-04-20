@@ -164,19 +164,42 @@ _, camera_theta, camera_phi = astropy.coordinates.cartesian_to_spherical(camera_
 animation = pv.GetAnimationScene()
 
 # Calculate timestamps
-global_frame_times = np.arange(
+input_frame_times = np.arange(
     start = animation.StartTime,
     stop = animation.EndTime,
     step = args.frame_spacing,
     )
-animation.NumberOfFrames = len(global_frame_times)
+# Save the IDs of the frames
+input_frame_ids = np.arange(len(input_frame_times))
+
+animation.NumberOfFrames = len(input_frame_times)
+
+
+global_frame_times = input_frame_times
+global_frame_ids = input_frame_ids
+
+start_time = energy_flux_source.Size
+
+# Skip number of frames
+if datacorner.start_time is not None:
+    start_time = datacorner.start_time + energy_flux_source.Size
+    # print(f'Skipping to t={datacorner.start_time}')
+    mask = input_frame_times > start_time
+    global_frame_times = input_frame_times[mask]
+    global_frame_ids = input_frame_ids[mask]
+
+
 split_global_frame_times = np.array_split(global_frame_times, args.total_task_number)
+split_global_frame_ids = np.array_split(global_frame_ids, args.total_task_number)
 
 frame_number_offset = 0
 for a in split_global_frame_times[:args.task_id]:
     frame_number_offset += len(a)
 
+# Get task-local frames
 frame_times = split_global_frame_times[args.task_id]
+frame_ids = split_global_frame_ids[args.task_id]
+
 # Set time
 for i, frame_time in enumerate(frame_times):
     global_frame_id = frame_number_offset + i
@@ -192,7 +215,7 @@ for i, frame_time in enumerate(frame_times):
 
     ax = fig.add_subplot(gs[0, :])
 
-    frame = plt.imread(f'{directory}/frame.{global_frame_id:06d}.png')
+    frame = plt.imread(f'{directory}/frame.{frame_ids[i]:06d}.png')
 
     ax.imshow(frame)
     ax.margins(0, 0)
@@ -290,7 +313,7 @@ for i, frame_time in enumerate(frame_times):
     waveform_ax.plot(strain.t[mask], h_plus[mask], color=berlin['S8'], label=r'$\mathsf{h_{+}}$')
     waveform_ax.axvline(x=frame_time, color="white")
     waveform_ax.axis('off')
-    waveform_ax.set_xlim(0,strain.t[-1])
+    waveform_ax.set_xlim(start_time,strain.t[-1])
     h_max = np.max(np.abs(h))
     waveform_ax.set_ylim(-1.2*h_max, 1.2*h_max)
     waveform_ax.legend(fontsize=14, loc='upper left', ncol=3, frameon=False, labelspacing=0, handletextpad=0.4, borderpad=0.2, borderaxespad=1.5)
