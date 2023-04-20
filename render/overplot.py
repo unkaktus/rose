@@ -75,7 +75,15 @@ class GU():
             return (self.v*const.G/const.c**3).to(unit)
     def MLT(self, m, l, t):
         return self.M**m * self.L**l * self.T**t
-    
+
+def roundz(x, n):
+    return round(x, n)+0.0
+
+def spin_projections(chi):
+    L = np.array([0, 0, 1])
+    chi_parallel = np.dot(chi, L)
+    chi_perp = np.linalg.norm(chi - chi_parallel*L)
+    return chi_parallel, chi_perp
 
 def time_text(time, mass, merger) -> str:
     t = GU(mass).T.to('ms').value * (time - merger)
@@ -233,13 +241,20 @@ for i, frame_time in enumerate(frame_times):
         xytext=(5, -10), textcoords='offset points',
         color = 'white'
     )
-    ax.annotate(f"$\mathsf{{ \\vec{{\chi_1}} = ({datacorner.chi1[0]:.1f}, {datacorner.chi1[1]:.1f}, {datacorner.chi1[2]:.1f}) }}$",
+    chi1_parallel, chi1_perp = spin_projections(datacorner.chi1)
+    ax.annotate(f"$\mathsf{{ \chi_{{1,\parallel}} = {roundz(chi1_parallel, 1):.1f},~~\chi_{{1,\perp}} = {roundz(chi1_perp, 1):.1f} }}$",
         xy=(0.02, 0.91), xycoords='axes fraction', fontsize=14,
         xytext=(5, -10), textcoords='offset points',
         color = 'white'
     )
+    chi2_parallel, chi2_perp = spin_projections(datacorner.chi2)
+    ax.annotate(f"$\mathsf{{ \chi_{{2,\parallel}} = {roundz(chi2_parallel, 1):.1f},~~\chi_{{2,\perp}} = {roundz(chi2_perp, 1):.1f} }}$",
+        xy=(0.02, 0.87), xycoords='axes fraction', fontsize=14,
+        xytext=(5, -10), textcoords='offset points',
+        color = 'white'
+    )
     ax.annotate(f"$\mathsf{{ e = {datacorner.e:.1f} }}$",
-        xy=(0.02, 0.88), xycoords='axes fraction', fontsize=14,
+        xy=(0.02, 0.84), xycoords='axes fraction', fontsize=14,
         xytext=(5, -10), textcoords='offset points',
         color = 'white'
     )
