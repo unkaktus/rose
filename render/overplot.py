@@ -160,8 +160,6 @@ renderView = pv.GetActiveViewOrCreate('RenderView')
 camera_position = renderView.CameraPosition
 _, camera_theta, camera_phi = astropy.coordinates.cartesian_to_spherical(camera_position[0], camera_position[1], camera_position[2])
 
-print(f"camera angle: theta={camera_theta}, phi={camera_phi}")
-
 # get animation scene
 animation = pv.GetAnimationScene()
 
@@ -281,7 +279,7 @@ for i, frame_time in enumerate(frame_times):
         )
 
     # Now add the waveform
-    h = evaluate_swsh(spin_weight=-2, ell_max=8, coefficients=strain.data, theta=np.pi/2, phi=0) #theta=camera_theta, phi=camera_phi)
+    h = evaluate_swsh(spin_weight=-2, ell_max=8, coefficients=strain.data, theta=camera_theta, phi=camera_phi)
     waveform_ax = fig.add_subplot(gs[1, :])
     h_plus, h_cross = np.real(h), np.imag(h)
     waveform_ax.plot(strain.t, h_cross, color="gray")
