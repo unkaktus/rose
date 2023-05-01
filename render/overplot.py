@@ -30,6 +30,7 @@ from attrdict import AttrDict
 import scri
 import spherical
 import quaternionic
+import h5py
 
 
 berlin = {
@@ -88,8 +89,8 @@ def spin_projections(chi):
 def time_text(time, mass, merger) -> str:
     t = GU(mass).T.to('ms').value * (time - merger)
     if t < 0:
-        return f'$\mathsf{{{-t:4.0f} ms before merger}}$'.replace(' ', '\ ')
-    return f'$\mathsf{{{t:4.0f} ms after merger}}$'.replace(' ', '\ ')
+        return f'$\mathsf{{{t:4.0f} ms}}$'.replace(' ', '~')
+    return f'$\mathsf{{+{t:4.0f} ms}}$'.replace(' ', '~')
 
 def roundup(x, to):
     return int(math.ceil(x / to)) * to
@@ -114,7 +115,8 @@ def evaluate_swsh(spin_weight, ell_max, coefficients, theta, phi):
     return total
 
 directory = os.path.splitext(args.state)[0]
-output_dir = directory
+source_dir = os.path.join(directory, 'rendered')
+output_dir = os.path.join(directory, 'overplotted')
 if args.output_dir is not None:
     output_dir = args.output_dir
 
@@ -138,12 +140,14 @@ if datacorner.q is None:
 # TODO: take these limits from the state file
 espl_limits = (40, 110)
 
-first_frame = plt.imread(f'{directory}/frame.{0:06d}.png')
+first_frame = plt.imread(f'{source_dir}/frame.{0:06d}.png')
 print(first_frame.shape)
 
 px = 1/plt.rcParams['figure.dpi'] 
 # figsize = (first_frame.shape[1]*px, first_frame.shape[0]*px)
-figsize = (first_frame.shape[1]*px, 1.2*first_frame.shape[0]*px)
+aspect_ratio = 16/9
+figheight = 1.2 * first_frame.shape[0]*px
+figsize = (aspect_ratio*figheight, figheight)
 
 # disable automatic camera reset on 'Show'
 pv._DisableFirstRenderCameraReset()
@@ -197,6 +201,24 @@ if datacorner.start_time is not None:
     global_frame_ids = input_frame_ids[mask]
 
 
+# Read spins
+horizons_file = h5py.File('Horizons.h5')
+chi1_timeseries = horizons_file['AhA.dir']['chiInertial.dat'][:]
+chi2_timeseries = horizons_file['AhB.dir']['chiInertial.dat'][:]
+horizons_file.close()
+
+def find_value(timeseries, time):
+    print(f'diff={np.abs(time - timeseries[:,0])}')
+    index = np.argmin(np.abs(time - timeseries[:,0]))
+    print(f'ts_index={index}')
+    return timeseries[index,1:]
+
+# Read eccentricity
+eccentricity = np.array([])
+if datacorner.e_file is not None:
+    eccentricity = np.loadtxt(datacorner.e_file)
+
+
 split_global_frame_times = np.array_split(global_frame_times, args.total_task_number)
 split_global_frame_ids = np.array_split(global_frame_ids, args.total_task_number)
 
@@ -223,7 +245,7 @@ for i, frame_time in enumerate(frame_times):
 
     ax = fig.add_subplot(gs[0, :])
 
-    frame = plt.imread(f'{directory}/frame.{frame_ids[i]:06d}.png')
+    frame = plt.imread(f'{source_dir}/frame.{frame_ids[i]:06d}.png')
 
     ax.imshow(frame)
     ax.margins(0, 0)
@@ -241,19 +263,21 @@ for i, frame_time in enumerate(frame_times):
         xytext=(5, -10), textcoords='offset points',
         color = 'white'
     )
-    chi1_parallel, chi1_perp = spin_projections(datacorner.chi1)
+
+    chi1_parallel, chi1_perp = spin_projections(find_value(chi1_timeseries, frame_time))
     ax.annotate(f"$\mathsf{{ \chi_{{1,\parallel}} = {roundz(chi1_parallel, 1):.1f},~~\chi_{{1,\perp}} = {roundz(chi1_perp, 1):.1f} }}$",
         xy=(0.02, 0.91), xycoords='axes fraction', fontsize=14,
         xytext=(5, -10), textcoords='offset points',
         color = 'white'
     )
-    chi2_parallel, chi2_perp = spin_projections(datacorner.chi2)
+    chi2_parallel, chi2_perp = spin_projections(find_value(chi2_timeseries, frame_time))
     ax.annotate(f"$\mathsf{{ \chi_{{2,\parallel}} = {roundz(chi2_parallel, 1):.1f},~~\chi_{{2,\perp}} = {roundz(chi2_perp, 1):.1f} }}$",
         xy=(0.02, 0.87), xycoords='axes fraction', fontsize=14,
         xytext=(5, -10), textcoords='offset points',
         color = 'white'
     )
-    ax.annotate(f"$\mathsf{{ e = {datacorner.e:.1f} }}$",
+    e = find_value(eccentricity, frame_time-merger_time)[0]
+    ax.annotate(f"$\mathsf{{ e = {e:1f} }}$",
         xy=(0.02, 0.84), xycoords='axes fraction', fontsize=14,
         xytext=(5, -10), textcoords='offset points',
         color = 'white'
@@ -262,9 +286,10 @@ for i, frame_time in enumerate(frame_times):
 
     # Left bottom corner
     # Time
+    location = (0.1, 0.2)
     ax.annotate(time_text(frame_time, mass=datacorner.M, merger=merger_time),
-        xy=(0.02, 0.02), xycoords='axes fraction', fontsize=14,
-        xytext=(5, 10), textcoords='offset points',
+        xy=(0.5, 0.5), xycoords='figure fraction', fontsize=14,
+        xytext=location, textcoords='figure fraction',
         color = 'white'
     )
 
@@ -327,12 +352,13 @@ for i, frame_time in enumerate(frame_times):
     waveform_ax.plot(strain.t[mask], h_cross[mask], color=berlin['S2'], label=r'$\mathsf{h_{\times}}$')
     waveform_ax.plot(strain.t[mask], h_plus[mask], color=berlin['S8'], label=r'$\mathsf{h_{+}}$')
     h_max = np.max(np.abs(h))
+    limit_factor = 1.2
     waveform_ax.axvline(x=frame_time,
-                        ymax = (1.2*h_max + np.maximum(h_cross[mask][-1], h_plus[mask][-1]))/(2.4*h_max),
+                        ymax = 0.5 + 0.5*(2/3)/limit_factor,
                         color="white")
     waveform_ax.axis('off')
     waveform_ax.set_xlim(start_time,strain.t[-1])
-    waveform_ax.set_ylim(-1.2*h_max, 1.2*h_max)
+    waveform_ax.set_ylim(-limit_factor*h_max, limit_factor*h_max)
     waveform_ax.legend(fontsize=14, loc='upper left', ncol=3, frameon=False, labelspacing=0, handletextpad=0.4, borderpad=0.2, borderaxespad=1.5)
 
     output_filename = f'{output_dir}/frame-overplotted.{global_frame_id:06d}.png'
