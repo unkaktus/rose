@@ -406,14 +406,14 @@ class StrainVolumeReader(VTKPythonAlgorithmBase):
         phase = t - spherical_grid.r + self.activation_offset
 
         # Compute strain in the volume
-        strain = np.zeros(len(spherical_grid.r), dtype=np.complex)
+        strain = np.zeros(len(spherical_grid.r), dtype=complex)
 
         for i in range(self.modes_selection.GetNumberOfArrays()):
             mode_name = self.modes_selection.GetArrayName(i)
         for l in range(abs(grid_params.spin_weight), grid_params.ell_max + 1):
             for abs_m in range(0, l + 1):
                 mode_name = get_mode_name(l, abs_m)
-                strain_mode = np.zeros(len(spherical_grid.r), dtype=np.complex)
+                strain_mode = np.zeros(len(spherical_grid.r), dtype=complex)
                 if not self.modes_selection.ArrayIsEnabled(mode_name):
                     continue
                 for sign_m in (-1, 1):
