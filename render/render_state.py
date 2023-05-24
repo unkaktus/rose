@@ -15,13 +15,14 @@ import paraview.simple as pv
 import numpy as np
 import os
 
-output_dir = os.path.splitext(args.state)[0]
+directory = os.path.splitext(args.state)[0]
+output_dir = os.path.join(directory, 'rendered')
 if args.output_dir is not None:
     output_dir = args.output_dir
 
 # Create output directory if it doesn't exist
 try:
-    os.mkdir(output_dir)
+    os.makedirs(output_dir)
 except:
     pass
 
