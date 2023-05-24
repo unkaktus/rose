@@ -1,0 +1,10 @@
+# Overplot configuration
+espl_range = [40, 110]
+M = 50
+q = 6
+chi1 = [-8.92756e-11, 6.857e-13, -2.75915882e-08]
+chi2 = [3.0815e-12, 2.461e-13, -5.77306476998e-08]
+e = 0
+start_time = 400.0
+source = "/Lev4"
+e_file = ""
