@@ -43,8 +43,8 @@ plt.rc("savefig", edgecolor=background_color)
 aspect_ratio = 16/9
 fontsize = 20
 
-aei_logo_filename = "/home/imarkin/rose/logos/AEI_Logo_white.png"
-sxs_logo_filename = "/home/imarkin/rose/logos/SXS_pale.png"
+aei_logo_filename = "/home/imarkin/rose/logos/aei.png"
+sxs_logo_filename = "/home/imarkin/rose/logos/sxs.png"
 
 directory = os.path.splitext(args.state)[0]
 source_dir = os.path.join(directory, 'rendered')
@@ -143,8 +143,7 @@ for a in split_global_frame_times[:args.task_id]:
 frame_times = split_global_frame_times[args.task_id]
 frame_ids = split_global_frame_ids[args.task_id]
 
-def add_zoom_in(fig, axes, frame_id):
-    ax = fig.add_subplot(axes)
+def add_border_to_axes(ax, color='darkgrey'):
     ax.margins(0, 0)
     ax.tick_params(
         axis='both',
@@ -156,23 +155,51 @@ def add_zoom_in(fig, axes, frame_id):
         labelleft=False,
         ) # labels along the bottom edge are off
     for spine in ax.spines:
-        ax.spines[spine].set_color('darkgray')
-    frame = plt.imread(f'{zoom_dir}/frame.{frame_id:06d}.png')
-    ax.imshow(frame)
+        ax.spines[spine].set_color(color)
+
+def axis_ratio(ax):
+    return ax.bbox.width / ax.bbox.height
+
+def imshow(ax, filename, zoom=1):
+    image = plt.imread(filename)
+    ax.imshow(image, origin='upper')
+    if zoom != 1:
+        (center_x, center_y) = (image.shape[1]//2, image.shape[0]//2)
+        extent = (image.shape[1]//zoom, image.shape[0]//zoom)
+        ax.set_xlim((center_x - axis_ratio(ax)*extent[0]//2, center_x + axis_ratio(ax)*extent[0]//2))
+        ax.set_ylim((center_y - extent[1]//2, center_y + extent[1]//2))
+
+def add_render(fig, axes, source_dir, frame_id):
+    ax = fig.add_subplot(axes)
+    filename = f'{source_dir}/frame.{frame_id:06d}.png'
+    imshow(ax, filename, zoom=1.5)
+    ax.margins(0, 0)
+    ax.axis('off')
+    # add_border_to_axes(ax)
+
+def add_zoom_in(fig, axes, frame_id):
+    ax = fig.add_subplot(axes)
+    ax.margins(0, 0)
+    add_border_to_axes(ax)
+    print(axis_ratio(ax))
+    filename = f'{zoom_dir}/frame.{frame_id:06d}.png'
+    imshow(ax, filename)
 
 def add_logos(fig, logos):
     for logo in logos:
         (axes, filename) = logo
         ax = fig.add_subplot(axes)
         ax.margins(0, 0)
-        ax.axis('off')
         image = plt.imread(filename)
         ax.imshow(image)
+        ax.axis('off')
+        # add_border_to_axes(ax)
 
 def add_colorbar(fig, axes):
     ax = fig.add_subplot(axes)
     ax.margins(0, 0)
     ax.axis('off')
+    # add_border_to_axes(ax)
     cbar_bounds = [0.22, 0.05, 0.03, 0.9]
 
     if args.astro_units_flux is False:
@@ -244,14 +271,14 @@ def add_datacorner(fig, axes, frame_time):
     chi_timeseries = read_spins()
 
     xy[1] -= line_height*1.2
-    chi1_parallel, chi1_perp = spin_projections(find_value(chi_timeseries[0], frame_time))
-    luc_ax.annotate(f"$\mathsf{{ \chi_{{1,\parallel}} = {roundz(chi1_parallel, 1):.1f},~~\chi_{{1,\perp}} = {roundz(chi1_perp, 1):.1f} }}$",
+    chi1 = find_value(chi_timeseries[0], frame_time)
+    luc_ax.annotate(f"$\mathsf{{ \\vec{{\chi_1}} = ( {roundz(chi1[0], 1):.1f},~{roundz(chi1[1], 1):.1f},~{roundz(chi1[2], 1):.1f} ) }}$",
         xy=xy, xycoords='axes fraction', fontsize=fontsize,
         color = 'white'
     )
     xy[1] -= line_height*1.2
-    chi2_parallel, chi2_perp = spin_projections(find_value(chi_timeseries[1], frame_time))
-    luc_ax.annotate(f"$\mathsf{{ \chi_{{2,\parallel}} = {roundz(chi2_parallel, 1):.1f},~~\chi_{{2,\perp}} = {roundz(chi2_perp, 1):.1f} }}$",
+    chi2 = find_value(chi_timeseries[1], frame_time)
+    luc_ax.annotate(f"$\mathsf{{ \\vec{{\chi_2}} = ( {roundz(chi2[0], 1):.1f},~{roundz(chi2[1], 1):.1f},~{roundz(chi2[2], 1):.1f} ) }}$",
         xy=xy, xycoords='axes fraction', fontsize=fontsize,
         color = 'white'
     )
@@ -298,39 +325,40 @@ def add_clock(fig, axes, frame_time):
         color = 'white'
     )
 
-# def overplot_frame(i, frame_time):
-
 # Main frame loop
 for i, frame_time in enumerate(frame_times):
     global_frame_id = frame_number_offset + i
     print(f'[{args.task_id:04d}] Postprocessing frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d})')
     
     fig = plt.figure(figsize=figsize)
-    gs = GridSpec(9, 16, figure=fig,
-                  height_ratios=np.ones(9),
-                  width_ratios=np.ones(16),
+    gs = GridSpec(9*2, 16*2, figure=fig,
+                  height_ratios=np.ones(9*2),
+                  width_ratios=np.ones(16*2),
                   hspace=0.0,
                   wspace=0.0
                 )
+    axes = {
+        "render": gs[0:16,  4:28],
+        "zoomin": gs[0:6, 24:],
+        "datacorner": gs[0:8, 0:8],
+        "colorbar": gs[6:14, 0:6],
+        "clock": gs[14:16, 0:8],
+        "waveform": gs[16:18, 0:30],
+        "logo1": gs[16:18, 30:31],
+        "logo2": gs[16:18, 31:],
+    }
     # gs has [y, x] indexing
     fig.tight_layout()
 
-    # Primary axes
-    ax = fig.add_subplot(gs[0:7, 4:4+8])
-    frame = plt.imread(f'{source_dir}/frame.{frame_ids[i]:06d}.png')
-    ax.imshow(frame)
-    ax.margins(0, 0)
-    ax.axis('off')
-
-    add_datacorner(fig, gs[0:4, 0:4], frame_time)
-    add_colorbar(fig, gs[4:4+3, 0:4])
-    add_clock(fig, gs[4+3:4+3 + 1, 0:4], frame_time)
-    add_waveform(fig, gs[4+3+1:3+3+1 + 2, 0:14], frame_time=frame_time)
-    add_zoom_in(fig, gs[0:3, 4+8:4+8 + 4], frame_id=frame_ids[i])
-
+    add_render(fig, axes["render"], source_dir, frame_id=frame_ids[i])
+    add_datacorner(fig, axes["datacorner"], frame_time)
+    add_colorbar(fig, axes["colorbar"])
+    add_clock(fig, axes["clock"], frame_time)
+    add_waveform(fig, axes["waveform"], frame_time=frame_time)
+    add_zoom_in(fig, axes["zoomin"], frame_id=frame_ids[i])
     add_logos(fig, [
-        (gs[4+3+1:4+3+1 + 1, 14], aei_logo_filename),
-        (gs[4+3+1:4+3+1 + 1, 15], sxs_logo_filename),
+        (axes["logo1"], aei_logo_filename),
+        (axes["logo2"], sxs_logo_filename),
         ])
     
     gs.update(hspace=0.0, wspace=0.0)
