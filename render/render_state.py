@@ -8,6 +8,8 @@ parser.add_argument("--task-id", type=int, help="Current task ID", default=0)
 parser.add_argument("--state", type=str, help="State filename")
 parser.add_argument("--output-dir", type=str, help="Path to output directory", default=None)
 parser.add_argument("--frame-spacing", type=float, help="Frame spacing in total masses", default=10)
+parser.add_argument("--skip-local", type=int, help="Local number of frames to skip to resume the rendering", default=0)
+
 
 args = parser.parse_args()
 
@@ -54,9 +56,13 @@ for a in split_global_frame_times[:args.task_id]:
 
 frame_times = split_global_frame_times[args.task_id]
 
+if args.skip_local > 0:
+    print(f'[{args.task_id:04d}] Skipping locally {args.skip_local } frames')
+
 # Set time
-for i, frame_time in enumerate(frame_times):
-    global_frame_id = frame_number_offset + i
+for i, frame_time in enumerate(frame_times[args.skip_local:]):
+
+    global_frame_id = args.skip_local + frame_number_offset + i
     print(f'[{args.task_id:04d}] Rendering frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d})')
     animation.AnimationTime = frame_time
     pv.Render()
