@@ -4,13 +4,16 @@ import hashlib
 import logging
 import tempfile
 import time
+import concurrent.futures
 
 import numpy as np
-from scipy import special
 import spherical
 import quaternionic
 from spherical_functions import LM_index
 import scri
+from astropy import units as u, constants as const
+import scipy
+import psutil
 
 
 from vtkmodules.vtkCommonDataModel import vtkUniformGrid
@@ -23,9 +26,15 @@ from paraview import util
 
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 rose_cache_dir = os.environ.get("ROSE_CACHE_DIR")
 if rose_cache_dir is None:
     rose_cache_dir = tempfile.mkdtemp(prefix='rose-')
+
+workers = os.environ.get("ROSE_WORKERS")
+if workers is None:
+    workers = psutil.cpu_count(logical=False)
 
 EnergyFluxLog10ArrayName = "Energy flux (log10)"
 ESPLArrayName = "eSPL in dB"
@@ -49,7 +58,11 @@ def set_output_array(output, name, array):
     quantity_vtk.SetName(name)
     output.GetPointData().AddArray(quantity_vtk)
 
-from astropy import units as u, constants as const
+
+def energy_flux_hash(waveform_filename):
+    key = f'energy_flux|{waveform_filename}'.encode('utf-8')
+    return hashlib.sha256(key).hexdigest()[:16]
+
 
 class GU():
     def __init__(self, v):
@@ -75,129 +88,6 @@ def eSPL(energy_flux, distance):
     intensity = energy_flux * gu.Luminosity / (distance**2)
     SPL = 10 * np.log10(intensity/I_0)
     return SPL
-
-
-class SWSHParameters:
-    size: float
-    num_points: float
-    spin_weight: int
-    ell_max: int
-
-class SphericalGrid:
-    r: np.ndarray
-    theta: np.ndarray
-    phi: np.ndarray
-
-
-class CartesianGrid:
-    x: np.ndarray
-    y: np.ndarray
-    z: np.ndarray
-
-    def __init__(self, p: SWSHParameters) -> None:
-        X = np.linspace(-p.size, p.size, p.num_points)
-        Y = X
-        Z = X
-        self.x, self.y, self.z = map(
-            lambda arr: arr.flatten(order="F"), np.meshgrid(
-                X, Y, Z, indexing="ij")
-        )
-
-    def spherical(self) -> SphericalGrid:
-        spherical_grid = SphericalGrid()
-        spherical_grid.r = np.sqrt(self.x**2 + self.y**2 + self.z**2)
-        spherical_grid.theta = np.arccos(self.z / spherical_grid.r)
-        spherical_grid.phi = np.arctan2(self.y, self.x)
-        return spherical_grid
-
-
-def swsh_grid_hash(p: SWSHParameters):
-    key = f'{p.size}|{p.num_points}|{p.spin_weight}|{p.ell_max}'.encode(
-        'utf-8')
-    return hashlib.sha256(key).hexdigest()[:16]
-
-def energy_flux_hash(waveform_filename):
-    key = f'energy_flux|{waveform_filename}'.encode('utf-8')
-    return hashlib.sha256(key).hexdigest()[:16]
-
-def load_swsh_grid(params: SWSHParameters, cache_dir: str):
-    if cache_dir == "":
-        return None
-    grid_hash = swsh_grid_hash(params)
-    cache_filename = os.path.join(
-        cache_dir,
-        f'{grid_hash}.npy',
-    )
-    if not os.path.exists(cache_filename):
-        logger.info("Cache miss: {swsh_grid_cache_filename}")
-        return None
-
-    logger.info(
-        f"Loading SWSH grid from file '{cache_filename}'..."
-    )
-    swsh_grid = np.load(cache_filename)
-    return swsh_grid
-
-
-def create_swsh_grid(p: SWSHParameters):
-    logger.info("Creating SWSH grid...")
-
-    cartesian_grid = CartesianGrid(p)
-    spherical_grid = cartesian_grid.spherical()
-
-    angles = quaternionic.array.from_spherical_coordinates(
-        spherical_grid.theta, spherical_grid.phi)
-    swsh_grid = spherical.Wigner(p.ell_max).sYlm(s=p.spin_weight, R=angles)
-    return swsh_grid
-
-
-def save_swsh_grid(swsh_grid, p: SWSHParameters, cache_dir: str):
-    if cache_dir == "":
-        return
-    if not os.path.exists(cache_dir):
-        os.makedirs(cache_dir)
-    grid_hash = swsh_grid_hash(p)
-    cache_filename = os.path.join(
-        cache_dir,
-        f'{grid_hash}.npy',
-    )
-    if not os.path.exists(cache_filename):
-        np.save(cache_filename, swsh_grid)
-        logger.debug(f'SWSH grid cache saved to {cache_filename}.')
-
-
-def load_or_create_swsh_grid(p: SWSHParameters, cache_dir: str):
-    swsh_grid = load_swsh_grid(p, cache_dir)
-    if swsh_grid is None:
-        swsh_grid = create_swsh_grid(p)
-        save_swsh_grid(swsh_grid, p, cache_dir)
-    return swsh_grid
-
-def smoothstep(x):
-    return np.where(x < 0, 0, np.where(x <= 1, 3 * x**2 - 2 * x**3, 1))
-
-def deactivation(x, width, outer):
-    return smoothstep((outer - x) / width)
-
-class GridAdjustParameters():
-    apply_deactivation: bool
-    deactivation_width: float
-    scale_with_distance: bool
-
-
-def adjust_swsh_grid(swsh_grid, grid_params: SWSHParameters, params: GridAdjustParameters):
-    spherical_grid = CartesianGrid(grid_params).spherical()
-
-    if params.apply_deactivation:
-        screen = deactivation(x = spherical_grid.r,
-                        width=params.deactivation_width,
-                        outer=grid_params.size)
-        swsh_grid *= screen.reshape(screen.shape + (1,))
-
-    if params.scale_with_distance:
-        swsh_grid /= (spherical_grid.r**2 + 1.0e-30).reshape(spherical_grid.r.shape + (1,))
-    return swsh_grid, spherical_grid
-
 
 
 def get_timestep(algorithm, logger=None):
@@ -236,6 +126,81 @@ def get_mode_name(l, abs_m):
     return "({}, {}) Mode".format(l, abs_m)
 
 
+class SWSHParameters:
+    size: float
+    num_points: float
+    spin_weight: int
+    ell_max: int
+
+class SphericalGrid:
+    r: np.ndarray
+    theta: np.ndarray
+    phi: np.ndarray
+
+
+class CartesianGrid:
+    x: np.ndarray
+    y: np.ndarray
+    z: np.ndarray
+
+    def __init__(self, p: SWSHParameters) -> None:
+        X = np.linspace(-p.size, p.size, p.num_points)
+        Y = X
+        Z = X
+        self.x, self.y, self.z = map(
+            lambda arr: arr.flatten(order="F"), np.meshgrid(
+                X, Y, Z, indexing="ij")
+        )
+
+    def spherical(self) -> SphericalGrid:
+        spherical_grid = SphericalGrid()
+        spherical_grid.r = np.sqrt(self.x**2 + self.y**2 + self.z**2)
+        spherical_grid.theta = np.arccos(self.z / spherical_grid.r)
+        spherical_grid.phi = np.arctan2(self.y, self.x)
+        return spherical_grid
+
+
+def smoothstep(x):
+    return np.where(x < 0, 0, np.where(x <= 1, 3 * x**2 - 2 * x**3, 1))
+
+def deactivation(x, width, outer):
+    return smoothstep((outer - x) / width)
+
+class GridAdjustParameters():
+    apply_deactivation: bool
+    deactivation_width: float
+    scale_with_distance: bool
+
+
+def Ylm(l, m, theta, phi, out=None):
+    return scipy.special.sph_harm(m, l, phi, theta, out)
+
+
+def all_modes(r, theta, phi, energy_flux, phase, timesteps, ell_max):
+    # Compute quantity in the volume from the input waveform data
+    quantity = np.zeros_like(r, dtype=complex)
+    mode = np.zeros_like(quantity, dtype=complex)
+    c_lm = np.zeros_like(quantity, dtype=complex)
+    for l in range(0, ell_max + 1):
+        for m in range(-l, l+1):
+            Ylm(l=l, m=m, phi=phi, theta=theta, out=mode)
+            c_lm_timeseries = np.array(energy_flux[:, LM_index(l,m,0)])
+
+            # Interpolate c_lm using linear interpolation
+            c_lm = np.interp(
+                phase,
+                timesteps,
+                c_lm_timeseries,
+                left=0.0,
+                right=0.0,
+            )
+            mode *= c_lm
+            quantity += mode
+    del mode
+    del c_lm
+    return quantity
+
+
 @smproxy.reader(
     name="EnergyFluxVolumeReader",
     label="Energy Flux Volume Reader",
@@ -251,7 +216,6 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
             outputType="vtkUniformGrid",
         )
 
-        self.swsh_cache_dir = os.path.join(rose_cache_dir, "swsh_cache")
         self.energy_flux_cache_dir = os.path.join(rose_cache_dir, "energy_flux_cache")
 
         self._filename = None
@@ -393,6 +357,20 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         # WaveformDataReader.
         set_timesteps(self, self._get_timesteps(), logger=logger)
 
+        D = self.size
+
+        grid_params = SWSHParameters()
+        grid_params.size = D
+        grid_params.num_points = N
+        grid_params.spin_weight = self.spin_weight
+        grid_params.ell_max = self.ell_max
+
+        start = time.time()
+        grid = CartesianGrid(grid_params)
+        self.spherical_grid = grid.spherical()
+        end = time.time()
+        logger.debug(f"Done grid creation in {end - start}")
+
         return 1
 
     def load_data(self):
@@ -431,7 +409,6 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
 
         set_timesteps(self, self._get_timesteps(), logger=logger)
 
-
         output = dsa.WrapDataObject(vtkUniformGrid.GetData(outInfo))
 
         t = get_timestep(self, logger=logger)
@@ -445,62 +422,62 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         output.SetOrigin(-D, -D, -D)
         output.SetSpacing(dx, dx, dx)
 
-        grid_params = SWSHParameters()
-        grid_params.size = D
-        grid_params.num_points = N
-        grid_params.spin_weight = self.spin_weight
-        grid_params.ell_max = self.ell_max
 
-        swsh_grid = load_or_create_swsh_grid(grid_params, cache_dir=self.swsh_cache_dir)
-        if swsh_grid is None:
-            raise Exception('SWSH grid is None')
-
-        adjust_params = GridAdjustParameters()
-        adjust_params.apply_deactivation = self.apply_deactivation
-        adjust_params.deactivation_width = self.deactivation_width
-        adjust_params.scale_with_distance = self.scale_with_distance
-
-        swsh_grid, spherical_grid = adjust_swsh_grid(swsh_grid, grid_params, adjust_params)
-
+        start = time.time()
         # Compute scaled waveform phase on the grid
-        phase = (t + self.time_shift) - spherical_grid.r
+        phase = (t + self.time_shift) - self.spherical_grid.r
+        end = time.time()
+        logger.debug(f"Done phase calculation in {end - start}")
 
-        # Compute quantity in the volume from the input waveform data
-        waveform_timesteps = self.timesteps
-        quantity = np.zeros(len(spherical_grid.r), dtype=complex)
+        start = time.time()
+        # Split to workers
+        logger.debug(f'workers: {workers}')
+        r_w = np.array_split(self.spherical_grid.r, workers)
+        theta_w = np.array_split(self.spherical_grid.theta, workers)
+        phi_w = np.array_split(self.spherical_grid.phi, workers)
+        phase_w = np.array_split(phase, workers)
+        quantity_w = np.zeros(shape=(workers,), dtype=np.ndarray)
 
-        for i in range(self.modes_selection.GetNumberOfArrays()):
-            mode_name = self.modes_selection.GetArrayName(i)
-        for l in range(abs(grid_params.spin_weight), grid_params.ell_max + 1):
-            for abs_m in range(0, l + 1):
-                mode_name = get_mode_name(l, abs_m)
-                quantity_mode = np.zeros(len(spherical_grid.r), dtype=complex)
-                if not self.modes_selection.ArrayIsEnabled(mode_name):
-                    continue
-                for sign_m in (-1, 1):
-                    m = abs_m * sign_m
-                    dataset_name = "Y_l{}_m{}".format(l, m)
-                    mode_profile = swsh_grid[:, LM_index(l, m, 0)]
-                    waveform_mode_data = np.array(self.energy_flux[:, LM_index(l,m,0)])
+        def all_modes_w(worker):
+            quantity_w_local = all_modes(r=r_w[worker],
+                    theta=theta_w[worker],
+                    phi=phi_w[worker],
+                    energy_flux=self.energy_flux,
+                    phase=phase_w[worker],
+                    timesteps=self.timesteps,
+                    ell_max=self.ell_max)
+            logger.debug(f"{worker} Calculated all modes")
+            return quantity_w_local
 
-                    mode_data = np.interp(
-                        phase,
-                        waveform_timesteps,
-                        waveform_mode_data,
-                        left=0.0,
-                        right=0.0,
-                    )
-                    quantity_mode += mode_data * mode_profile
-                quantity += quantity_mode
+        logger.debug(f"creating {workers} workers")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(all_modes_w, worker): worker for worker in range(workers)}
+            for future in concurrent.futures.as_completed(futures):
+                worker = futures[future]
+                logger.debug(f'worker {worker} is done')
+                try:
+                    quantity_w[worker] = future.result()
+                except Exception as exc:
+                    print('%r generated an exception: %s' % (futures[future], exc))
 
+        logger.debug(f"Executor is done")
+        quantity = np.concatenate(quantity_w)
+
+        del quantity_w, r_w, theta_w, phi_w, phase_w
+
+        end = time.time()
+        logger.debug(f"Done calculating modes in {end - start}")
+
+        if self.apply_deactivation:
+            screen = deactivation(x = self.spherical_grid.r,
+                        width=self.deactivation_width,
+                        outer=self.size)
+            quantity *= screen
 
         energy_flux = np.real(quantity)
 
         # Clip from below
         np.maximum(energy_flux, self.value_threshold, out=energy_flux)
-
-        # Take log here instead of in ParaView
-
 
         # Add entire sum to the output
         if self.component_selection.ArrayIsEnabled(EnergyFluxLog10ArrayName):
