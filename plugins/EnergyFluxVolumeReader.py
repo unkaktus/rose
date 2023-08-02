@@ -32,7 +32,7 @@ rose_cache_dir = os.environ.get("ROSE_CACHE_DIR")
 if rose_cache_dir is None:
     rose_cache_dir = tempfile.mkdtemp(prefix='rose-')
 
-workers = os.environ.get("ROSE_WORKERS")
+workers = int(os.environ.get("ROSE_WORKERS"))
 if workers is None:
     workers = psutil.cpu_count(logical=False)
 
@@ -86,7 +86,7 @@ def eSPL(energy_flux, distance):
     gu = GU(1)
     I_0 = 1e-12*u.W/u.m**2
     intensity = energy_flux * gu.Luminosity / (distance**2)
-    SPL = 10 * np.log10(intensity/I_0)
+    SPL = 10 * np.log10( (intensity/I_0).to('').value)
     return SPL
 
 
@@ -159,17 +159,12 @@ class CartesianGrid:
         spherical_grid.phi = np.arctan2(self.y, self.x)
         return spherical_grid
 
-
-def smoothstep(x):
-    return np.where(x < 0, 0, np.where(x <= 1, 3 * x**2 - 2 * x**3, 1))
-
-def deactivation(x, width, outer):
-    return smoothstep((outer - x) / width)
-
-class GridAdjustParameters():
-    apply_deactivation: bool
-    deactivation_width: float
-    scale_with_distance: bool
+def smoothcos(x, v, scale, width):
+    mask = x > scale + width/2
+    v[mask] = 0
+    mask = np.logical_and(scale - width/2 < x, x < scale + width/2)
+    v[mask] *= np.cos((np.pi/2)* (x[mask]-scale+width/2) / width )**2
+    return v
 
 
 def Ylm(l, m, theta, phi, out=None):
@@ -268,18 +263,6 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
     def GetModes(self):
         return self.modes_selection
 
-    @smproperty.intvector(name="ApplyDeactivation", default_values=True)
-    @smdomain.xml('<BooleanDomain name="bool"/>')
-    def SetApplyDeactivation(self, value):
-        self.apply_deactivation = value
-        self.Modified()
-
-    @smproperty.intvector(name="DeactivationWidth", default_values=10)
-    def SetDeactivationWidth(self, value):
-        self.deactivation_width = value
-        self.Modified()
-
-
     @smproperty.dataarrayselection(name="Components")
     def GetPolarizations(self):
         return self.component_selection
@@ -303,12 +286,6 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
     @smproperty.doublevector(name="TimeShift", default_values=0.0)
     def SetTimeShift(self, value):
         self.time_shift = value
-        self.Modified()
-
-    @smproperty.intvector(name="ScaleWithDistance", default_values=False)
-    @smdomain.xml('<BooleanDomain name="bool"/>')
-    def SetScaleWithDistance(self, value):
-        self.scale_with_distance = value
         self.Modified()
 
     @smproperty.doublevector(name="ValueThreshold", default_values=1e-16)
@@ -468,12 +445,6 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         end = time.time()
         logger.debug(f"Done calculating modes in {end - start}")
 
-        if self.apply_deactivation:
-            screen = deactivation(x = self.spherical_grid.r,
-                        width=self.deactivation_width,
-                        outer=self.size)
-            quantity *= screen
-
         energy_flux = np.real(quantity)
 
         # Clip from below
@@ -487,6 +458,7 @@ class EnergyFluxVolumeReader(VTKPythonAlgorithmBase):
         # Effective Sound Pressure Level in dB
         if self.component_selection.ArrayIsEnabled(ESPLArrayName):
             espl = eSPL(energy_flux, distance=self.distance*u.Mpc)
+            espl = smoothcos(self.spherical_grid.r, espl, scale=self.size*0.95, width=5)
             set_output_array(output, ESPLArrayName, espl)
 
 
