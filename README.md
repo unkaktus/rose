@@ -8,12 +8,10 @@ The name `rose` comes from the rose-like shapes of gravitaional emission of bina
 
 ![The rose](rose.png)
 
-> The closer I get to you \
-> A feeling comes over me (Me, too) \
-> Falling closer, sweet as the gravity \
-> The closer I get to you
+> Detrás de los zarzales salvajes de tu pecho \
+> Hay una rosa que deslumbrará todo el jardín
 
-[_The Closer I Get to You_ - Roberta Flack & Donny Hathaway](https://air.unkaktus.art/WWW92xgv94c)
+_Ruido_ - La Prohibida
 
 ### Architecture
 - ParaView plugins to load waveform and horizon data
