@@ -23,108 +23,103 @@ _Ruido_ - La Prohibida
 7. Run the overplotting job to create frames with the data, text, legends and logos
 8. Run the job to combine the frames to a video file
 
-### Requirements
-* ParaView 5.11.0 on your desktop
-* [`spanner`](https://github.com/unkaktus/spanner) for running render in parallel
 
+### Installation
 
-### Installation on an HPC cluster
-1. Load or install Apptainer. It is likely it is modules on your system.
-
-For example:
+1. Install MambaForge locally and on the cluster.
+Run the code below and follow the instructions, activating `base` environment:
 
 ```shell
-source /home/SPACK2023/share/spack/setup-env.sh
-module avail apptainer
-module load apptainer-1.0.3-gcc-12.2.0-aojy6ca
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh"
+bash Mambaforge-$(uname)-$(uname -m).sh
 ```
 
-2. Create a directory to store executable container files:
+2. Locally, install ParaView, spanner and mitten:
 ```shell
-mkdir $HOME/apptainers
+mamba install -c https://mamba.unkaktus.art/ paraview=5.11 spanner mitten
 ```
 
-3. There, download latest `rose` container file from GitHub:
+3. On the cluster, install apptainer, spanner:
 ```shell
-cd ~/apptainers
-wget https://github.com/unkaktus/rose/releases/download/v2.0.0/rose-v2.0.0.sif
+mamba install -c https://mamba.unkaktus.art/ apptainer spanner mitten
 ```
+
+4. Create a directory for containers and download the latest `rose` container file from GitHub:
+```shell
+mkdir -p $HOME/apptainers
+curl -L -o $HOME/apptainers/rose-v2.0.0.sif https://github.com/unkaktus/rose/releases/download/v2.0.0/rose-v2.0.0.sif
+```
+
 
 ### Running on an HPC cluster in interactive mode
 
-1. Run the container on some node:
+1. Run the ParaView server from the container, adjusting the directories you want to mount inside the container appropriately:
 ```shell
-srun -J rose-interactive -N1 -n1 --exclusive --pty apptainer shell --bind /scratch:/scratch --bind /work:/work ~/apptainers/rose-v2.0.0.sif
-```
-2. Note the hostname of the node you are running at:
-```shell
-hostname
-```
-3. Run ParaView server inside the container:
-```shell
-pvserver
+srun -J rose --pty apptainer exec --bind /scratch:/scratch --bind /work:/work ~/apptainers/rose-v2.0.0.sif pvserver
 ```
 
-4. Create a new SSH connection with local port forwarding of the port 11111 to the `pvserver` on the node it is running on. Here, replace `node-hostname` with the node hostname from Step 2, as well as your cluster hostname and username.
+2. Locally, start ParaView by running `paraview` from the terminal.
+
+3. Setup port forwarding to the remote ParaView server job, adjusting the SSH machine name and name of the job:
 ```shell
-ssh -L 11111:node-hostname:11111 username@cluster
+spanner port-forward -p 11111 -m machine-name rose
 ```
-5. In local ParaView, connect to remote ParaView server - `Connect` button.
+
+4. In the ParaView window, connect to remote ParaView server - `Connect` button.
 Then, specify `localhost:11111` as the address of the server.
 
 6. Enjoy loading files from the cluster using `EnergyFluxVolumeReader`, `StrainVolumeReader`, and `TrajectoryTailReader`!
 
+
+
 ### Running parallel state rendering on an HPC cluster
 
-0. Make sure you installed `spanner` (see above).
+1. Copy `render/render.begin` and your state file (`.pvsm`) to the cluster.
 
-1. Copy `render/begin.toml` into the directory with your state file (`.pvsm`).
-
-2. Adjust the number of nodes, path to `rose.sif` container, and other parameters in `begin.toml`.
+2. Adjust the number of nodes, path to `rose.sif` container, and other parameters in `render.begin`.
 
 3. Begin the rendering job on your state using `spanner`:
 ```shell
-spanner begin state.pvsm
+spanner begin -f /path/to/render.begin state.pvsm
 ```
-4. You can track the process using `spanner`, e.g.:
+4. Check the status of the job:
 ```shell
-spanner logs -f rose_state
+spanner list
 ```
 
-5. The job will create a directory with the same name as the state file, and output the frames there.
-
-6. You can create a video from these frames by running `make_movie.sh` in the frame directory:
+6. Track the process:
 ```shell
-apptainer exec --bind /scratch:/scratch --bind /work:/work ~/apptainers/rose-v2.0.0.sif make_movie.sh
+spanner logs -f rose_job_name
 ```
 
-This will create a video file with the name of the current directory.
+7. The job will create a directory with the same name as the state file, and output the frames there.
+
+8. Create a video named `output.mp4` from the frames in the run directory, adding dark background:
+```shell
+apptainer exec --bind /scratch:/scratch --bind /work:/work ~/apptainers/rose-v2.0.0.sif \
+     create_video.py --frames-dir rendered --background-color 0x161616 --output output.mp4
+```
 
 ### Running parallel frame postprocessing on an HPC cluster
 
-0. Make sure you installed `spanner` (see above).
+1. Copy `render/overplot/overplot.begin` to the cluster.
 
-1. Copy `render/begin-overplot.toml` into the directory with your state file (`.pvsm`).
+2. Adjust the number of nodes, path to `rose.sif` container, and other parameters in `overplot.begin`.
 
-2. Adjust the number of nodes, path to `rose.sif` container, and other parameters in `begin-overplot.toml`.
-
-3. Begin the rendering job on your state using `spanner`:
+3. Begin the rendering job on your state:
 ```shell
-spanner begin -f begin-overplot.toml state.pvsm
-```
-4. You can track the process using `spanner`, e.g.:
-```shell
-spanner logs -f rose-overplot_state
+spanner begin -f /path/to/overplot.begin state.pvsm
 ```
 
-5. The job will plot legends and a colorbar on top of the frames in the frame directory, and save
-postprocessed frames with `frame-overplotted` prefix.
+4. The job will plot legends and a colorbar on top of the frames in the frame directory, and save
+postprocessed frames into `overplotted` subdirectory.
 
-6. You can create a video from these frames by running `make_movie.sh` in the frame directory using the correct frame name prefix:
+5. Create a video from these frames:
 ```shell
-apptainer exec --bind /scratch:/scratch --bind /work:/work ~/apptainers/rose-v2.0.0.sif make_movie.sh frame-overplotted
+apptainer exec --bind /scratch:/scratch --bind /work:/work ~/apptainers/rose-v2.0.0.sif \
+     create_video.py --frames-dir overplotted --output output-overplotted.mp4
 ```
-
-It will create a video file with the name of the current directory with the frame prefix included.
 
 This is your final movie, enjoy! 💫
+
+_Aquí y ahora puede comenzar tu viaje._
