@@ -34,14 +34,20 @@ curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Ma
 bash Mambaforge-$(uname)-$(uname -m).sh
 ```
 
-2. Locally, install ParaView, spanner and mitten:
+_In case you don't have internet access on the remote:_ use `mitten` instead of `ssh` to login there.
+Install `mitten` locally via:
 ```shell
-mamba install -c https://mamba.unkaktus.art/ paraview=5.11 spanner mitten
+mamba install -c https://mamba.unkaktus.art/ mitten
 ```
 
-3. On the cluster, install apptainer, spanner:
+2. Locally, install ParaView, spanner:
 ```shell
-mamba install -c https://mamba.unkaktus.art/ apptainer spanner mitten
+mamba install -c https://mamba.unkaktus.art/ paraview=5.11 spanner
+```
+
+3. On the cluster, install apptainer and spanner:
+```shell
+mamba install -c https://mamba.unkaktus.art/ apptainer spanner
 ```
 
 4. Create a directory for containers and download the latest `rose` container file from GitHub:
