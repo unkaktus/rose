@@ -45,9 +45,9 @@ mamba install -c https://mamba.unkaktus.art/ mitten
 mamba install -c https://mamba.unkaktus.art/ paraview=5.11 spanner
 ```
 
-3. On the cluster, install apptainer and spanner:
+3. On the cluster, install apptainer, squashfuse and spanner:
 ```shell
-mamba install -c https://mamba.unkaktus.art/ apptainer spanner
+mamba install -c https://mamba.unkaktus.art/ apptainer squashfuse spanner
 ```
 
 4. Create a directory for containers and download the latest `rose` container file from GitHub:
