@@ -1,12 +1,13 @@
 import numpy as np
 
-def points_for_peaks(peaks, lwidth, opacity):
+# Create the transfer function as a series of triangles
+def points_for_peaks(peaks, width, opacity):
     points = np.array([])
     for peak in peaks:
         new_points = [
-            peak-lwidth, 0.0, 0.5, 0.0,
+            peak-width, 0.0, 0.5, 0.0,
             peak,  opacity, 0.5, 0.0,
-            peak, 0.0, 0.5, 0.0,
+            peak+width, 0.0, 0.5, 0.0,
         ]
         points = np.append(points, new_points)
     print(f'{opacity}')
@@ -14,7 +15,8 @@ def points_for_peaks(peaks, lwidth, opacity):
 
 peaks = np.arange(40, 111, 10)
 print(peaks)
-lwidth = 0.3
-opacity = 0.7
+
+width = 0.1
+opacity = 0.4
 tf = GetOpacityTransferFunction('eSPL in dB')
-tf.Points = points_for_peaks(peaks, lwidth, opacity)
+tf.Points = points_for_peaks(peaks, width, opacity)
