@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+## For use with `robin submit` (https://github.com/unkaktus/robin)
+
+import os
+import sys
+
+def generate_job(name):
+    email = 'e@mail.com'
+    partition = 'general'
+    nodes = 1
+    processes = 2
+
+    job = f'''#!/bin/bash -l
+#SBATCH -J {name}
+#SBATCH -o logs/{name}.log
+#SBATCH -e logs/{name}.log
+#SBATCH --partition {partition}
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user={email}
+#SBATCH --nodes {nodes}
+#SBATCH --ntasks-per-node {processes}
+#SBATCH --cpus-per-task {processes}
+#SBATCH --time=12:00:00
+
+cd {os.getcwd()}
+
+module load paraview
+export PV_PLUGIN_PATH=/path/to/rose/plugins
+export ROSE_CACHE_DIR=/path/to/rose-cache
+
+srun robin nest /path/to/rose/render/render_state.py --state={name}.pvsm --total-task-number={{.TotalTaskNumber}} --task-id={{.TaskID}}
+'''
+    return job
+
+if __name__ == "__main__":
+    name = sys.argv[1]
+    job_data = generate_job(name)
+    print(job_data)
