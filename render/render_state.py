@@ -1,6 +1,7 @@
 #!/usr/bin/env -S python -u
 
 import argparse
+import time
 
 parser = argparse.ArgumentParser('render_state.py')
 parser.add_argument("--total-task-number", type=int, help="Total number of tasks", default=1)
@@ -47,6 +48,9 @@ global_frame_times = np.arange(
     stop = animation.EndTime,
     step = args.frame_spacing,
     )
+
+print(f'[D] start={animation.StartTime}, stop={animation.EndTime}, step={args.frame_spacing}')
+
 animation.NumberOfFrames = len(global_frame_times)
 split_global_frame_times = np.array_split(global_frame_times, args.total_task_number)
 
@@ -61,13 +65,15 @@ if args.skip_local > 0:
 
 # Set time
 for i, frame_time in enumerate(frame_times[args.skip_local:]):
-
+    start = time.time()
     global_frame_id = args.skip_local + frame_number_offset + i
     print(f'[{args.task_id:04d}] Rendering frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d})')
     animation.AnimationTime = frame_time
     pv.Render()
     filename = f'frame.{global_frame_id:06d}.png'
     filepath = os.path.join(output_dir, filename)
-    pv.SaveScreenshot(filepath, TransparentBackground=1)
+    pv.SaveScreenshot(filepath, CompressionLevel='1') # or ImageResolution=[3840, 2160], TransparentBackground=1
+    end = time.time()
+    print(f'[{args.task_id:04d}] Time of rendering frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d}): {end-start:.0f}s')
 
 print(f'[{args.task_id}] Done')
