@@ -32,8 +32,8 @@ rose_cache_dir = os.environ.get("ROSE_CACHE_DIR")
 if rose_cache_dir is None:
     rose_cache_dir = tempfile.mkdtemp(prefix='rose-')
 
-workers = int(os.environ.get("ROSE_WORKERS"))
-if workers is None:
+workers = int(os.environ.get("ROSE_WORKERS", "0"))
+if workers == 0:
     workers = psutil.cpu_count(logical=False)
 
 EnergyFluxLog10ArrayName = "Energy flux (log10)"
