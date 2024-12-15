@@ -4,7 +4,7 @@
 
 `rose` is a framework to visualize gravitational-wave radiation using ParaView.
 
-It is based on plugins from [`gwpv`](https://github.com/nilsvu/gwpv) written by [Nils Vu](https://github.com/nilsvu).
+It is based on [`gwpv`](https://github.com/nilsvu/gwpv) written by [Nils Vu](https://github.com/nilsvu). Check it out!
 
 The name `rose` comes from the flower shapes of gravitaional emission of compact binary coalescences.
 
@@ -14,71 +14,58 @@ The name `rose` comes from the flower shapes of gravitaional emission of compact
 _Ruido_ - La Prohibida
 
 ### Workflow
-1. Start ParaView server from the container
-2. Connect to the server in ParaView desktop client
-3. Setup the visualization using `rose` plugins
-4. Save the state to a file
-5. Copy the file to the cluster to render
-6. Run the rendering job to render frames for the state
-7. Run the overplotting job to create frames with the data, text, legends and logos
-8. Run the job to combine the frames to a video file
+1. Create and activate Mamba/Conda environment with the Python version matching the one in ParaView
+2. Install the dependencies
+3. Start ParaView using `rose-pv` script to automatically load the plugins
+4. Open the waveform files and setup the scene, and export the frames
+5. Run the overplotting script to add legends, text, logos, and other data
+6. Combine the frames into a video
+5. Enjoy the results!
 
 
 ### Installation
 
-1. Install MambaForge locally and on the cluster.
-Run the code below and follow the instructions, activating `base` environment:
+1. Install MambaForge using the command below:
 
 ```shell
 curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh"
 bash Mambaforge-$(uname)-$(uname -m).sh
 ```
 
-_In case you don't have internet access on the remote:_ use `mitten` instead of `ssh` to login there.
-Install `mitten` locally via:
+_In case you don't have internet access on the remote:_ use [`mitten`](https://github.com/unkaktus/mitten) instead of `ssh` to pass your internet connection to the remote.
+
+2. Find the exact Python version your ParaView has. Go to ParaView->About ParaView and note down the "Python Library Version". For example, my ParaView 5.13.1 has Python 3.10.13.
+
+3. Create and activate the Mamba environment for `rose` with the matching Python version and dependencies:
+
 ```shell
-mamba install -c https://mamba.unkaktus.art/ mitten
+mamba create -y -n rose python=3.10.13 numpy scipy psutil astropy h5py spherical scri spherical_functions
+mamba activate rose
+```
+4. From the `rose` directory root, start ParaView via `rose-pv` script by specifying path to your ParaView binary, 
+
+```shell
+./rose-pv /path/to/paraview
 ```
 
-2. Locally, install ParaView, spanner:
+or the application in case of macOS:
+
 ```shell
-mamba install -c https://mamba.unkaktus.art/ paraview=5.11 spanner
+./rose-pv /Applications/ParaView-5.13.1.app
 ```
 
-3. On the cluster, install apptainer, squashfuse and spanner:
-```shell
-mamba install -c https://mamba.unkaktus.art/ apptainer squashfuse spanner
-```
+That will start the ParaView and load all `rose` plugins.
 
-4. Create a directory for containers and download the latest `rose` container file from GitHub:
-```shell
-mkdir -p $HOME/apptainers
-curl -L -o $HOME/apptainers/rose-v2.0.0.sif https://github.com/unkaktus/rose/releases/download/v2.0.0/rose-v2.0.0.sif
-```
-
-
-### Running on an HPC cluster in interactive mode
-
-1. Run the ParaView server from the container, adjusting the directories you want to mount inside the container appropriately:
-```shell
-srun -J rose --pty apptainer exec --bind /scratch:/scratch --bind /work:/work ~/apptainers/rose-v2.0.0.sif pvserver
-```
-
-2. Locally, start ParaView by running `paraview` from the terminal.
-
-3. Setup port forwarding to the remote ParaView server job, adjusting the SSH machine name and name of the job:
-```shell
-spanner port-forward -p 11111 -m machine-name rose
-```
-
-4. In the ParaView window, connect to remote ParaView server - `Connect` button.
-Then, specify `localhost:11111` as the address of the server.
-
-6. Enjoy loading files from the cluster using `EnergyFluxVolumeReader`, `StrainVolumeReader`, and `TrajectoryTailReader`!
-
-
+5. Now you are ready to open your waveform files using the appropriate reader. For example, `rhOverM_Asymptotic_GeometricUnits_CoM.h5` using `EnergyFluxVolumeReader`.
+Note that at the momement `rose` supports only extrapolated waveforms in SXS catalog format, cf. Appendix A.3.1 of Boyle:2019kee.
 
 ### Running parallel state rendering on an HPC cluster
+
+Running locally on your machine might be too slow or not fitting into RAM for high resolution. For that reason, you might want to run it on a more powerful cluster.
+
+The idea here is to create the scene in ParaView locally, save it to a state file, and then render it on a remote cluster. As the paths to the data files might be different locally and on the cluster, one has to readjust them by editing the state file. As I didn't write yet the script to automatically swap the path, one has has to do it manually.
+
+The below instructions are currently outdated.
 
 1. Copy `render/render.begin` and your state file (`.pvsm`) to the cluster.
 
