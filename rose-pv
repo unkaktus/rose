@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+# Ivan Markin 15/12/24
+
+import site
+import sys
+import os
+import subprocess
+
+python_path = ":".join(site.getsitepackages())
+
+env = os.environ.copy()
+env["PYTHONPATH"] = python_path
+env["PV_PLUGIN_PATH"] = os.path.join(os.getcwd(), "plugins")
+
+pv_path = sys.argv[1]
+if pv_path.endswith(".app"):
+    pv_path = os.path.join(pv_path, "Contents/MacOS/paraview")
+
+subprocess.run([pv_path], stdout=sys.stdout, stderr=sys.stderr, env=env)
