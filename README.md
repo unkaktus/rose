@@ -1,6 +1,9 @@
+![The rose](rose.png)
+
+
 ## rose
 
-![The rose](rose.png)
+[![DOI](https://zenodo.org/badge/546645837.svg)](https://doi.org/10.5281/zenodo.14627565)
 
 `rose` is a framework to visualize gravitational-wave radiation using ParaView.
 
@@ -66,3 +69,7 @@ Running locally on your machine might be too slow or not fitting into RAM for hi
 The idea here is to create the scene in ParaView locally, save it to a state file, and then render it on a remote cluster. As the paths to the data files might be different locally and on the cluster, one has to readjust them by editing the state file. As I didn't write yet the script to automatically swap the path, one has has to do it manually.
 
 _To be written_
+
+### Citing
+
+If you used `rose` to produce your visuals, please cite it using the following [Zenodo record](https://doi.org/10.5281/zenodo.14627565).
