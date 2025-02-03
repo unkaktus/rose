@@ -28,11 +28,11 @@ _Ruido_ - La Prohibida
 
 ### Installation
 
-1. Install MambaForge using the command below:
+1. Install Miniforge using the command below:
 
-```shell
-curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh"
-bash Mambaforge-$(uname)-$(uname -m).sh
+```
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+bash Miniforge3-$(uname)-$(uname -m)
 ```
 
 _In case you don't have internet access on the remote:_ use [`mitten`](https://github.com/unkaktus/mitten) instead of `ssh` to pass your internet connection to the remote.
