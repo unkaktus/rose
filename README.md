@@ -32,7 +32,7 @@ _Ruido_ - La Prohibida
 
 ```
 curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-bash Miniforge3-$(uname)-$(uname -m)
+bash Miniforge3-$(uname)-$(uname -m).sh
 ```
 
 _In case you don't have internet access on the remote:_ use [`mitten`](https://github.com/unkaktus/mitten) instead of `ssh` to pass your internet connection to the remote.
