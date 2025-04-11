@@ -221,6 +221,7 @@ class StrainVolumeReader(VTKPythonAlgorithmBase):
         self.spin_weight = -2
         self.ell_max = 2
         self.swsh_cache_dir = os.path.join(rose_cache_dir, "swsh_cache")
+        self.trailing_time = 0.0
 
         self.update_mode_selection()
 
@@ -310,9 +311,13 @@ class StrainVolumeReader(VTKPythonAlgorithmBase):
         self.deactivation_width = value
         self.Modified()
 
+    @smproperty.doublevector(name="TrailingTime", default_values=200)
+    def SetTrailingTime(self, value):
+        self.trailing_time = value
+        self.Modified()
+
     def _get_timesteps(self):
-        ts = np.linspace(self.time[0], self.time[-1], len(self.time))
-        return ts
+        return self.time
 
     @smproperty.doublevector(
         name="TimestepValues",
@@ -349,7 +354,13 @@ class StrainVolumeReader(VTKPythonAlgorithmBase):
 
             strain = f[self._subfile]
             # Take the time from (2,2) mode as the global time
-            self.time = strain["Y_l2_m2.dat"][:, 0]
+            data_time = strain["Y_l2_m2.dat"][:, 0]
+            dt = data_time[1]-data_time[0]
+            start_time = data_time[0]
+            end_time = data_time[-1]+self.trailing_time
+            n_timesteps = int((end_time-start_time)/dt)
+            self.data_time = data_time
+            self.time = np.linspace(start_time, end_time, n_timesteps)
 
             for mode_name in self.mode_names:
                 mode_data_column = strain[mode_name + ".dat"]
@@ -423,7 +434,7 @@ class StrainVolumeReader(VTKPythonAlgorithmBase):
 
                     mode_data = np.interp(
                         phase,
-                        self.time,
+                        self.data_time,
                         mode_data,
                         left=0.0,
                         right=0.0,
