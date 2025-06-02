@@ -67,11 +67,17 @@ if args.skip_local > 0:
 for i, frame_time in enumerate(frame_times[args.skip_local:]):
     start = time.time()
     global_frame_id = args.skip_local + frame_number_offset + i
+    filename = f'frame.{global_frame_id:06d}.png'
+    filepath = os.path.join(output_dir, filename)
+
+    if os.path.isfile(filepath):
+        print(f'Frame #{global_frame_id:06d} is already there. Skipping')
+        continue
+
     print(f'[{args.task_id:04d}] Rendering frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d})')
     animation.AnimationTime = frame_time
     pv.Render()
-    filename = f'frame.{global_frame_id:06d}.png'
-    filepath = os.path.join(output_dir, filename)
+
     pv.SaveScreenshot(filepath, CompressionLevel='1') # or ImageResolution=[3840, 2160], TransparentBackground=1
     end = time.time()
     print(f'[{args.task_id:04d}] Time of rendering frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d}): {end-start:.0f}s')
