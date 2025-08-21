@@ -2,6 +2,10 @@
 
 import logging
 
+import sxs
+
+import sys
+
 import h5py
 import numpy as np
 from paraview import vtk
@@ -44,17 +48,15 @@ def set_timesteps(algorithm, timesteps):
         f"Set data timesteps to {outInfo.Get(executive.TIME_RANGE())}."
     )
 
-
-@smproxy.reader(
-    label="Trajectory Tail Reader",
-    extensions="h5",
-    file_description="HDF5 files",
-)
-class TrajectoryTailReader(VTKPythonAlgorithmBase):
+@smproxy.source(name="TrajectoryTailSource", label="Trajectory Tail Source")
+class TrajectoryTailSource(VTKPythonAlgorithmBase):
     def __init__(self):
         VTKPythonAlgorithmBase.__init__(
             self, nInputPorts=0, nOutputPorts=1, outputType="vtkPolyData"
         )
+        self.simulation_name = ""
+        self.time = None
+        self.coors = None
 
     def _get_timesteps(self):
         return np.linspace(self.time[0], self.time[-1], len(self.time))
@@ -68,29 +70,19 @@ class TrajectoryTailReader(VTKPythonAlgorithmBase):
         timesteps = self._get_timesteps()
         return timesteps.tolist() if timesteps is not None else None
 
-
-    @smproperty.stringvector(name="File")
-    @smdomain.filelist()
-    @smhint.filechooser(extensions="h5", file_description="HDF5 files")
-    def SetFile(self, value):
-        self._filename = value
+    @smproperty.stringvector(name="SimulationName", default_values="")
+    def SetSimulationName(self, value):
+        self.simulation_name = value
         self.Modified()
 
-    @smproperty.stringvector(name="Subfile", default_values="AhB.dir")
+    @smproperty.doublevector(name="TotalMass", default_values=1.0)
+    def SetTotalMass(self, value):
+        self.total_mass = value
+        self.Modified()
+
+    @smproperty.stringvector(name="HorizonName", default_values="A")
     def SetSubfile(self, value):
-        self._subfile = value
-        self.Modified()
-
-    @smproperty.stringvector(
-        name="CoordinatesDataset", default_values="CoordCenterInertial.dat"
-    )
-    def SetCoordinatesDataset(self, value):
-        self._coords_dataset = value
-        self.Modified()
-
-    @smproperty.doublevector(name="RadialScale", default_values=1.0)
-    def SetRadialScale(self, value):
-        self._radial_scale = value
+        self.horizon_name = value
         self.Modified()
 
     @smproperty.doublevector(name="MinimumAge", default_values=0.0)
@@ -107,22 +99,38 @@ class TrajectoryTailReader(VTKPythonAlgorithmBase):
         logger.debug("Requesting information...")
         info = outInfo.GetInformationObject(0)
 
-        trajectory_file = h5py.File(self._filename, "r")
-        subfile = trajectory_file[self._subfile]
-        coords = np.array(subfile[self._coords_dataset])
+        if self.simulation_name == "":
+            return -1
 
-        coords[:, 1:] *= self._radial_scale
+        sim = sxs.load(self.simulation_name, download=False)
+        horizons = sim.horizons
+        
+        horizon = None
+        if self.horizon_name == "A":
+            horizon = horizons.A
+        if self.horizon_name == "B":
+            horizon = horizons.B
+        if self.horizon_name == "C":
+            horizon = horizons.C
 
-        self.time = coords[:,0]
-        self.coords = coords[:,1:]
+        self.time = horizon.time * self.total_mass
+
+        self.coords = np.column_stack((
+            horizon.coord_center_inertial[:,0],
+            horizon.coord_center_inertial[:,1],
+            horizon.coord_center_inertial[:,2],
+        ))
+        self.coords *= self.total_mass
 
         set_timesteps(self, self._get_timesteps())
-        trajectory_file.close()
         return 1
 
 
     def RequestData(self, request, inInfo, outInfo):
         output = dsa.WrapDataObject(vtkPolyData.GetData(outInfo))
+
+        if self.simulation_name == "":
+            return -1
 
         current_time = get_timestep(self)
         age = current_time - self.time
@@ -136,6 +144,8 @@ class TrajectoryTailReader(VTKPythonAlgorithmBase):
         line_vtk = vtk.vtkPolyLine()
         point_ids = line_vtk.GetPointIds()
         point_ids.SetNumberOfIds(len(self.coords[mask]))
+
+
         for i, point in enumerate(self.coords[mask]):
             points_vtk.InsertPoint(i, *point)
             point_ids.SetId(i, i)
