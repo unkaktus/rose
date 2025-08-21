@@ -5,9 +5,11 @@ import scri
 import numpy as np
 import paraview.simple as pv
 
+import sxs
 
 def evaluate_swsh(spin_weight, ell_max, coefficients, theta, phi):
     wigner = spherical.Wigner(ell_max=ell_max)
+    print(f"(t,p) = ({theta}, {phi})")
     direction = quaternionic.array.from_spherical_coordinates(theta, phi)
     total = np.zeros(coefficients.shape[0], dtype=complex)
 
@@ -20,11 +22,12 @@ def evaluate_swsh(spin_weight, ell_max, coefficients, theta, phi):
     return total
 
 def read_strain():
-    energy_flux_source = pv.FindSource('EnergyFlux')
-    if energy_flux_source is None:
-        raise "No source named EnergyFlux found"
-    waveform_file = f'{energy_flux_source.FileName}/{energy_flux_source.Subfile}'
-    strain = scri.SpEC.read_from_h5(waveform_file)
+    # energy_flux_source = pv.FindSource('EnergyFlux')
+    # if energy_flux_source is None:
+    #     raise "No source named EnergyFlux found"
+    # waveform_file = f'{energy_flux_source.FileName}/{energy_flux_source.Subfile}'
+    waveform_file = "/Users/unkaktus/tilde/GW231123/SXS_BBH_0483/Lev3_Strain_N2.h5"
+    strain = scri.WaveformModes.from_sxs(sxs.load(waveform_file))
     return strain
 
 def strain_merger_time(h):

@@ -1,19 +1,16 @@
 # Trajectory data Paraview reader
 
 import logging
-
-import sxs
-
-import sys
-
-import h5py
 import numpy as np
 from paraview import vtk
-from paraview.util.vtkAlgorithm import smdomain, smhint, smproperty, smproxy
+from paraview.util.vtkAlgorithm import smproperty, smproxy
 from paraview.vtk.util import numpy_support as vtknp
 from vtkmodules.numpy_interface import dataset_adapter as dsa
 from vtkmodules.util.vtkAlgorithm import VTKPythonAlgorithmBase
 from vtkmodules.vtkCommonDataModel import vtkPolyData
+
+import sxs
+
 
 logger = logging.getLogger(__name__)
 

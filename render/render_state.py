@@ -63,6 +63,9 @@ frame_times = split_global_frame_times[args.task_id]
 if args.skip_local > 0:
     print(f'[{args.task_id:04d}] Skipping locally {args.skip_local } frames')
 
+render_total_runtime = 0
+frames_rendered = 0
+
 # Set time
 for i, frame_time in enumerate(frame_times[args.skip_local:]):
     start = time.time()
@@ -74,12 +77,28 @@ for i, frame_time in enumerate(frame_times[args.skip_local:]):
         print(f'Frame #{global_frame_id:06d} is already there. Skipping')
         continue
 
+    if frame_time < 5310:
+        continue
+
+    if global_frame_id%4 != 0:
+        print(f'Frame #{global_frame_id:06d} is not divisble by 4. Skipping')
+        continue
+
     print(f'[{args.task_id:04d}] Rendering frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d})')
     animation.AnimationTime = frame_time
     pv.Render()
 
-    pv.SaveScreenshot(filepath, CompressionLevel='1') # or ImageResolution=[3840, 2160], TransparentBackground=1
+    pv.SaveScreenshot(filepath, CompressionLevel='1', TransparentBackground=1, ImageResolution=[3840, 2160]) # or ImageResolution=[3840, 2160], TransparentBackground=1
     end = time.time()
-    print(f'[{args.task_id:04d}] Time of rendering frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d}): {end-start:.0f}s')
 
+    render_duration = end-start
+    render_total_runtime += render_duration
+    frames_rendered += 1
+    render_speed = render_total_runtime / frames_rendered
+
+    local_batch_size = len(frame_times)
+    local_frames_left = (local_batch_size - i) / 4
+    eta = render_speed * local_frames_left / 3600
+
+    print(f'[{args.task_id:04d}] Time of rendering frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d}): {render_duration:.0f}s, ETA: {eta:.1f}h')
 print(f'[{args.task_id}] Done')

@@ -20,11 +20,14 @@ import paraview.simple as pv
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+
+mpl.use('Cairo')
+
 from matplotlib.gridspec import GridSpec
 from matplotlib.ticker import FuncFormatter
 import astropy.coordinates
 import toml
-from attrdict import AttrDict
+from addict import Dict
 
 from geounits import *
 from colorbar import *
@@ -34,7 +37,7 @@ from waveform import *
 from utils import *
 
 # better pictures and legends
-plt.rc('figure', dpi=200)
+plt.rc('figure', dpi=250)
 plt.rc('text', usetex=True)
 plt.style.use('dark_background')
 plt.rc("savefig", facecolor=background_color)
@@ -43,12 +46,12 @@ plt.rc("savefig", edgecolor=background_color)
 aspect_ratio = 16/9
 fontsize = 20
 
-aei_logo_filename = "/home/imarkin/rose/logos/aei.png"
-sxs_logo_filename = "/home/imarkin/rose/logos/sxs.png"
+# aei_logo_filename = "/home/imarkin/rose/logos/aei.png"
+# sxs_logo_filename = "/home/imarkin/rose/logos/sxs.png"
 
-directory = os.path.splitext(args.state)[0]
-source_dir = os.path.join(directory, 'rendered')
-zoom_dir = os.path.join(f'{directory}_zoom', 'rendered')
+directory = "EXP3"
+source_dir = os.path.join(directory, 'waves')
+zoom_dir = os.path.join(directory, 'objects')
 
 output_dir = os.path.join(directory, 'overplotted')
 
@@ -62,8 +65,8 @@ except:
     pass
 
 # Load datacorner.toml file
-datacorner = AttrDict(toml.load(
-    os.path.join(os.path.dirname(directory), "datacorner.toml")
+datacorner = Dict(toml.load(
+    os.path.join(directory, "datacorner.toml")
 ))
 
 if datacorner.M is None:
@@ -74,7 +77,7 @@ if datacorner.q is None:
 first_frame = plt.imread(f'{source_dir}/frame.{0:06d}.png')
 
 px = 1/plt.rcParams['figure.dpi'] 
-figheight = 1.2 * first_frame.shape[0]*px
+figheight = 1.3 * first_frame.shape[0]*px
 figsize = (aspect_ratio*figheight, figheight)
 
 # disable automatic camera reset on 'Show'
@@ -92,6 +95,8 @@ print(f'Merger time: {merger_time}')
 
 # Get camera position
 camera_theta, camera_phi = camera_angles()
+# camera_theta, camera_phi = 0, 0
+
 # get animation scene
 animation = pv.GetAnimationScene()
 
@@ -106,12 +111,13 @@ input_frame_ids = np.arange(len(input_frame_times))
 
 animation.NumberOfFrames = len(input_frame_times)
 
+# print(f"input_frame_times = {input_frame_times}")
 
 global_frame_times = input_frame_times
 global_frame_ids = input_frame_ids
 
 # Always let the waves propagate to the domain edge
-start_time = get_domain_size()
+start_time = animation.StartTime # - get_domain_size()
 
 # Skip number of frames
 if datacorner.start_time is not None:
@@ -128,9 +134,9 @@ if datacorner.start_time is not None:
 
 
 # Read eccentricity
-e_timeseries = np.array([[0, datacorner.e]]) # Fill with constant eccentricity by default
-if hasattr(datacorner, 'e_file'):
-    e_timeseries = np.loadtxt(datacorner.e_file)
+# e_timeseries = np.array([[0, datacorner.e]]) # Fill with constant eccentricity by default
+# if hasattr(datacorner, 'e_file'):
+#     e_timeseries = np.loadtxt(datacorner.e_file)
 
 split_global_frame_times = np.array_split(global_frame_times, args.total_task_number)
 split_global_frame_ids = np.array_split(global_frame_ids, args.total_task_number)
@@ -142,6 +148,7 @@ for a in split_global_frame_times[:args.task_id]:
 # Get task-local frames
 frame_times = split_global_frame_times[args.task_id]
 frame_ids = split_global_frame_ids[args.task_id]
+print(frame_ids)
 
 def add_border_to_axes(ax, color='darkgrey'):
     ax.margins(0, 0)
@@ -160,9 +167,30 @@ def add_border_to_axes(ax, color='darkgrey'):
 def axis_ratio(ax):
     return ax.bbox.width / ax.bbox.height
 
-def imshow(ax, filename, zoom=1):
-    image = plt.imread(filename)
-    ax.imshow(image, origin='upper')
+
+def PIL_load(filename):
+    from PIL import Image, ImageEnhance
+
+    # Load image
+    img = Image.open(filename)
+
+    # Adjust brightness (1.0 = original)
+    brightness_enhancer = ImageEnhance.Brightness(img)
+    img_bright = brightness_enhancer.enhance(1.2)  # Increase brightness by 20%
+
+    # Adjust saturation (1.0 = original)
+    saturation_enhancer = ImageEnhance.Color(img_bright)
+    img_final = saturation_enhancer.enhance(1.3)  # Decrease saturation by 20%
+    return img_final
+
+
+
+def imshow(ax, filename, zoom=1, origin='upper', adjust=False):
+    if adjust:
+        image = PIL_load(filename)
+    else:
+        image = plt.imread(filename)
+    ax.imshow(image, origin=origin)
     if zoom != 1:
         (center_x, center_y) = (image.shape[1]//2, image.shape[0]//2)
         extent = (image.shape[1]//zoom, image.shape[0]//zoom)
@@ -172,7 +200,7 @@ def imshow(ax, filename, zoom=1):
 def add_render(fig, axes, source_dir, frame_id):
     ax = fig.add_subplot(axes)
     filename = f'{source_dir}/frame.{frame_id:06d}.png'
-    imshow(ax, filename, zoom=1.5)
+    imshow(ax, filename, adjust=True)
     ax.margins(0, 0)
     ax.axis('off')
     # add_border_to_axes(ax)
@@ -180,8 +208,9 @@ def add_render(fig, axes, source_dir, frame_id):
 def add_zoom_in(fig, axes, frame_id):
     ax = fig.add_subplot(axes)
     ax.margins(0, 0)
-    add_border_to_axes(ax)
-    print(axis_ratio(ax))
+    ax.set_facecolor(background_color)
+    add_border_to_axes(ax, color='white')
+    # print(axis_ratio(ax))
     filename = f'{zoom_dir}/frame.{frame_id:06d}.png'
     imshow(ax, filename)
 
@@ -283,51 +312,73 @@ def add_datacorner(fig, axes, frame_time):
         color = 'white'
     )
     xy[1] -= line_height
-    e = find_value(e_timeseries, frame_time-merger_time)[0]
-    luc_ax.annotate(f"$\mathsf{{ e = {e:.1f} }}$",
-        xy=xy, xycoords='axes fraction', fontsize=fontsize,
-        color = 'white'
-    )
+    # e = find_value(e_timeseries, frame_time-merger_time)[0]
+    # luc_ax.annotate(f"$\mathsf{{ e = {e:.1f} }}$",
+        # xy=xy, xycoords='axes fraction', fontsize=fontsize,
+        # color = 'white'
+    # )
 
 def add_waveform(fig, axes, frame_time):
+    waveform_start_time = start_time
+    waveform_start_time = 3900+400 # HACK
+
     waveform_ax = fig.add_subplot(axes)
     h = evaluate_swsh(spin_weight=-2, ell_max=8, coefficients=strain.data, theta=camera_theta, phi=camera_phi)
     h_max = np.max(np.abs(h))
     h_plus, h_cross = np.real(h), np.imag(h)
+    h_max = np.max(h_cross)*1.1 ### Selected one
     limit_factor = 1.2
     
-    waveform_ax.set_xlim(start_time,strain.t[-1])
+    waveform_ax.set_xlim(waveform_start_time,strain.t[-1]-40)
     waveform_ax.set_ylim(-limit_factor*h_max, limit_factor*h_max)
 
     # Plot the gray future waveform
-    waveform_ax.plot(strain.t, h_cross, color="gray")
-    waveform_ax.plot(strain.t, h_plus, color="darkgray")
+    waveform_ax.plot(strain.t, h_cross, color="darkgray")
+    # waveform_ax.plot(strain.t, h_plus, color="darkgray") # dark
 
     # Plot the past waveform with colors
     mask = strain.t < frame_time
-    waveform_ax.plot(strain.t[mask], h_cross[mask], color=berlin['S2'], label=r'$\mathsf{h_{\times}}$')
-    waveform_ax.plot(strain.t[mask], h_plus[mask], color=berlin['S8'], label=r'$\mathsf{h_{+}}$')
+    waveform_ax.plot(strain.t[mask], h_cross[mask], color="white", label=r'$\mathsf{h_{\times}}$') #S2
+    # waveform_ax.plot(strain.t[mask], h_plus[mask], color=berlin['S8'], label=r'$\mathsf{h_{+}}$') 
     waveform_ax.axvline(x=frame_time,
-                        ymax = 0.5 + 0.5*(2/3)/limit_factor,
+                        ymax = limit_factor,
                         color="white")
+    
+    text_xoffset = 40
+    y_text = 0.82 * h_max
+    time_string = time_text(frame_time, mass=datacorner.M, merger=merger_time)
+    # if frame_time <= 0:
+    waveform_ax.text(x=merger_time+text_xoffset, y = y_text, s=time_string, color='white',
+            fontdict={"size":18})
     waveform_ax.margins(0, 0)
     waveform_ax.axis('off')
-    waveform_ax.legend(fontsize=fontsize, loc='upper left', ncol=3, frameon=False, labelspacing=0, handletextpad=0.4, borderpad=0.1, borderaxespad=0.1)
+    # waveform_ax.legend(fontsize=fontsize, loc='center', ncol=2, frameon=False, labelspacing=0, bbox_to_anchor=(0.1, 0.95)) #handletextpad=0.4, borderpad=0.05, borderaxespad=0.2)
 
 def add_clock(fig, axes, frame_time):
-    lbc_ax = fig.add_subplot(axes)
-    lbc_ax.margins(0, 0)
-    lbc_ax.axis('off')
+    ax = fig.add_subplot(axes)
+    ax.margins(0, 0)
+    ax.axis('off')
     # Time
-    lbc_ax.annotate(time_text(frame_time, mass=datacorner.M, merger=merger_time),
+    ax.annotate(time_text(frame_time, mass=datacorner.M, merger=merger_time),
         xy=(0.1, 0.1), xycoords='axes fraction', fontsize=fontsize,
         xytext=(5, 10), textcoords='offset points',
         color = 'white'
     )
 
+
 # Main frame loop
 for i, frame_time in enumerate(frame_times):
+    # if i > 15:
+    #     import sys
+    #     sys.exit(1)
     global_frame_id = frame_number_offset + i
+    if frame_ids[i]%4 != 0:
+        continue
+    if frame_ids[i] < 1711 or frame_ids[i] > 2143:
+        continue
+    # Shorter
+    if frame_time < 3900+400:
+        continue
     print(f'[{args.task_id:04d}] Postprocessing frame #{global_frame_id:06d} ({1+i:04d} out of local batch of size {len(frame_times):04d})')
     
     fig = plt.figure(figsize=figsize)
@@ -338,27 +389,30 @@ for i, frame_time in enumerate(frame_times):
                   wspace=0.0
                 )
     axes = {
-        "render": gs[0:16,  4:28],
-        "zoomin": gs[0:6, 24:],
-        "datacorner": gs[0:8, 0:8],
-        "colorbar": gs[6:14, 0:6],
+        "render": gs[0:18,  0:32],
+        "zoomin": gs[0:9, 20:31],
+        # "datacorner": gs[0:8, 0:8],
+        # "colorbar": gs[6:14, 0:6],
         "clock": gs[14:16, 0:8],
-        "waveform": gs[16:18, 0:30],
-        "logo1": gs[16:18, 30:31],
-        "logo2": gs[16:18, 31:],
+        "waveform": gs[16:18, 0:29],
+        "logo1": gs[16:18, 29:30],
+        "logo2": gs[16:18, 30:31],
+        "logo3": gs[16:18, 31:],
+
     }
     # gs has [y, x] indexing
     fig.tight_layout()
 
     add_render(fig, axes["render"], source_dir, frame_id=frame_ids[i])
-    add_datacorner(fig, axes["datacorner"], frame_time)
-    add_colorbar(fig, axes["colorbar"])
-    add_clock(fig, axes["clock"], frame_time)
+    # add_datacorner(fig, axes["datacorner"], frame_time)
+    # add_colorbar(fig, axes["colorbar"])
+    # add_clock(fig, axes["clock"], frame_time)
     add_waveform(fig, axes["waveform"], frame_time=frame_time)
     add_zoom_in(fig, axes["zoomin"], frame_id=frame_ids[i])
     add_logos(fig, [
-        (axes["logo1"], aei_logo_filename),
-        (axes["logo2"], sxs_logo_filename),
+        (axes["logo1"], "/Users/unkaktus/tilde/rose/render/logos/UP.png"),
+        (axes["logo2"], "/Users/unkaktus/tilde/rose/render/logos/AEI.png"),
+        (axes["logo3"], "/Users/unkaktus/tilde/rose/render/logos/SXS.png"),
         ])
     
     gs.update(hspace=0.0, wspace=0.0)

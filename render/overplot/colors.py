@@ -14,4 +14,4 @@ berlin = {
     "S2": "#007B3D",
 }
 
-background_color = "#121212"
+background_color = "#0D0D10" #"#0D0D10"
